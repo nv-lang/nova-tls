@@ -84,9 +84,37 @@ Requires the Nova toolchain (`nova` CLI + clang) and a prebuilt mbedTLS
 ```sh
 # mbedTLS include/lib dirs must be reachable by the linker (system search
 # path, or prepend to LIB/LIBRARY_PATH before invoking nova).
-nova build src/tls/ffi.nv
+#
+# Boehm GC (mandatory Nova runtime dep) needs its own lib/include dirs —
+# point NOVA_GC_LIB_DIR (+ optional NOVA_GC_INCLUDE_DIR) at a prebuilt
+# bdwgc if it isn't reachable via the default vcpkg/system lookup
+# (see compiler-codegen/src/test_runner.rs detect_boehm).
+#
+# `nova` does not (yet) bundle/locate the standard library relative to the
+# nova.exe install — a standalone package must point it at a Nova checkout's
+# std/ via NOVA_STD_PATH (compiler-codegen/src/manifest.rs resolve_std_path):
+export NOVA_STD_PATH=/path/to/nova/std
+
+# Use `nova test`, not `nova build <single-file>`, for anything beyond a
+# syntax/import smoke check — this package has no `main`, and isolated
+# single-file builds of a library CU can hit generic-inference ambiguities
+# that a full test CU resolves via its own call sites (verified upstream:
+# the same `ffi.nv` hits it identically inside the Nova monorepo).
 nova test src/tls
 ```
+
+**Known blocker (Plan 193 Ф.1, as of 2026-07-11):** `nova test` currently
+requires a full copy of the Nova compiler's C runtime — `compiler-codegen/nova_rt/`
+(~64 files) plus the `libuv` submodule (~468 MB source, built on demand) — to
+exist *inside this package's own repo root* (`nova-tls/compiler-codegen/nova_rt/`).
+The lookup (`RepoPaths::rt_dir`/`cg_include` in `nova-cli/src/main.rs`,
+`detect_or_build_libuv` in `compiler-codegen/src/test_runner.rs`) is hardcoded
+relative to the package root, with no env-override (unlike `NOVA_STD_PATH` /
+`NOVA_GC_LIB_DIR` above). Until the toolchain gains a way to resolve its own
+runtime relative to the `nova.exe` install (or an env override symmetric with
+`NOVA_STD_PATH`), a genuinely standalone `nova test` run isn't possible without
+vendoring the compiler's runtime into this repo — see the Nova monorepo's
+`docs/plans/193-nova-tls-repo.md` "Ф.1 блокер" section for the full trace.
 
 ## License
 
