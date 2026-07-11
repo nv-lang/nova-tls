@@ -1,0 +1,26 @@
+# nova.toml — nova-tls: TLS client/server (mbedTLS backend) for Nova.
+#
+# Layout: src/ canon (Plan 195 §"Раскладка пакета"). Source root is set via
+# the legacy-but-honored `[lib] src` key (compiler-codegen/src/manifest.rs)
+# so module paths resolve relative to `src/` (D78 — module path does NOT
+# include `src`): `src/tls/stream.nv` -> `module tls`.
+#
+# Native artifacts (`native/tls_c_shim.c` + headers) are declared through the
+# standard user-FFI build pipeline (`[ffi]`, docs/ffi-cookbook.md) — NOT a
+# compiler-internal special case. Zero Rust/cargo: clang compiles the .c
+# shim, mbedTLS is a prebuilt static lib (vcpkg or system package).
+
+[package]
+name = "tls"
+version = "0.1.0"
+description = "TLS client/server (cert-modes, mTLS, SPKI pinning) over mbedTLS — extracted from Nova's std/tls (Plan 193)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nv-lang/nova-tls"
+
+[lib]
+src = "src"
+
+[ffi]
+c_shims      = ["native/tls_c_shim.c"]
+include_dirs = ["native/"]
+libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
