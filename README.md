@@ -7,8 +7,12 @@ conformance on top of `std.net.TcpStream`.
 
 Backend: [mbedTLS](https://www.trustedfirmware.org/projects/mbed-tls/) via a
 thin C shim (`native/tls_c_shim.c`) — pure C, no Rust/cargo required to build
-this package. mbedTLS itself ships as a prebuilt static library (vcpkg or a
-system package); this package never builds mbedTLS from source.
+this package. mbedTLS v3.6.2 is vendored at `native/mbedtls/` (Plan 193 Ф.2
+gate-3, 2026-07-12 — see `native/mbedtls/VENDORED.md`) and self-builds on
+first `nova test`/`nova build` via the generic `[ffi] vendor_src_dirs`
+build-and-cache mechanism — no manual vcpkg/system install step required
+(a manually dropped-in prebuilt lib under `native/lib/` still works too and
+is used as-is, skipping the vendor build).
 
 Extracted from the Nova monorepo's `std/tls` (Plan 116 core design + Plan 195
 mbedTLS backend swap) into a standalone repository per
@@ -77,14 +81,13 @@ same-module peer relationship the facade files rely on). Import as
 
 ## Building standalone
 
-Requires the Nova toolchain (`nova` CLI + clang) and a prebuilt mbedTLS
-(`mbedtls`/`mbedx509`/`mbedcrypto` static libs + headers — e.g.
-`vcpkg install mbedtls`). No Rust/cargo.
+Requires the Nova toolchain (`nova` CLI + clang). No Rust/cargo, no manual
+mbedTLS install — mbedTLS self-builds from the vendored source at
+`native/mbedtls/` on first run (Plan 193 Ф.2 gate-3; drop a prebuilt
+`mbedtls`/`mbedx509`/`mbedcrypto` under `native/lib/` instead if you'd
+rather skip that one-time build, e.g. `vcpkg install mbedtls`).
 
 ```sh
-# mbedTLS include/lib dirs must be reachable by the linker (system search
-# path, or prepend to LIB/LIBRARY_PATH before invoking nova).
-#
 # Boehm GC (mandatory Nova runtime dep) needs its own lib/include dirs —
 # point NOVA_GC_LIB_DIR (+ optional NOVA_GC_INCLUDE_DIR) at a prebuilt
 # bdwgc if it isn't reachable via the default vcpkg/system lookup
@@ -95,6 +98,14 @@ Requires the Nova toolchain (`nova` CLI + clang) and a prebuilt mbedTLS
 # std/ via NOVA_STD_PATH (compiler-codegen/src/manifest.rs resolve_std_path):
 export NOVA_STD_PATH=/path/to/nova/std
 
+# Ditto for the compiler's own C runtime (compiler-codegen/nova_rt/ + the
+# libuv submodule it needs) — NOVA_CG_INCLUDE / NOVA_RT_DIR, symmetric with
+# NOVA_STD_PATH above (resolve_paths in nova-cli/src/main.rs; this is what
+# closed the Plan 193 Ф.1 blocker previously documented here — no more need
+# to vendor the compiler's runtime into this repo):
+export NOVA_CG_INCLUDE=/path/to/nova/compiler-codegen
+export NOVA_RT_DIR=/path/to/nova/compiler-codegen/nova_rt
+
 # Use `nova test`, not `nova build <single-file>`, for anything beyond a
 # syntax/import smoke check — this package has no `main`, and isolated
 # single-file builds of a library CU can hit generic-inference ambiguities
@@ -102,19 +113,6 @@ export NOVA_STD_PATH=/path/to/nova/std
 # the same `ffi.nv` hits it identically inside the Nova monorepo).
 nova test src/tls
 ```
-
-**Known blocker (Plan 193 Ф.1, as of 2026-07-11):** `nova test` currently
-requires a full copy of the Nova compiler's C runtime — `compiler-codegen/nova_rt/`
-(~64 files) plus the `libuv` submodule (~468 MB source, built on demand) — to
-exist *inside this package's own repo root* (`nova-tls/compiler-codegen/nova_rt/`).
-The lookup (`RepoPaths::rt_dir`/`cg_include` in `nova-cli/src/main.rs`,
-`detect_or_build_libuv` in `compiler-codegen/src/test_runner.rs`) is hardcoded
-relative to the package root, with no env-override (unlike `NOVA_STD_PATH` /
-`NOVA_GC_LIB_DIR` above). Until the toolchain gains a way to resolve its own
-runtime relative to the `nova.exe` install (or an env override symmetric with
-`NOVA_STD_PATH`), a genuinely standalone `nova test` run isn't possible without
-vendoring the compiler's runtime into this repo — see the Nova monorepo's
-`docs/plans/193-nova-tls-repo.md` "Ф.1 блокер" section for the full trace.
 
 ## License
 

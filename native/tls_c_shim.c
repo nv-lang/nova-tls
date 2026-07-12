@@ -45,6 +45,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Plan 193 Ф.2 gate-3 (mbedtls-vendored, 2026-07-12): `nova.toml`'s generic
+ * `[ffi]` build pipeline (compiler-codegen/src/test_runner.rs
+ * `ffi_have_defines`) defines `NOVA_FFI_HAVE_<LIB>` per confirmed-present
+ * `libs` entry — package-agnostic, the compiler has no notion of "mbedTLS"
+ * specifically. `NOVA_USE_MBEDTLS` below is this file's own (pre-existing,
+ * kept as-is to minimize the diff) internal switch name; translate the
+ * generic define into it so this shim's real-vs-stub selection tracks
+ * whether `mbedtls`/`mbedx509`/`mbedcrypto` actually linked, without the
+ * compiler ever hardcoding this package's library name (the retired
+ * monorepo-internal `c_file_uses_tls`/`detect_mbedtls` built-in special
+ * case in test_runner.rs — which DID hardcode `NOVA_USE_MBEDTLS` — is now
+ * guarded off whenever a package declares its own `[ffi] c_shims`, exactly
+ * this package's case; see `build_command`'s `has_own_ffi_c_shims` guard). */
+#if !defined(NOVA_USE_MBEDTLS) && defined(NOVA_FFI_HAVE_MBEDTLS)
+#define NOVA_USE_MBEDTLS 1
+#endif
+
 #ifdef NOVA_USE_MBEDTLS
 
 #include "mbedtls/ssl.h"

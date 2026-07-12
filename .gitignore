@@ -9,3 +9,10 @@ src/**/*.ilk
 # nova build/test scratch (obj dirs, libuv one-time build cache, lockfile
 # resolution scratch under target/).
 target/
+
+# native/lib/ (Plan 193 Ф.2 gate-3, 2026-07-12): auto-built mbedTLS archives
+# (vendor_src_dirs build-and-cache output) and its scratch obj dir — machine
+# + toolchain specific, never committed (mirrors target/libuv-cache/ not
+# being committed in the monorepo). A manually dropped-in prebuilt lib
+# (vcpkg/system) is likewise per-machine — don't commit either way.
+native/lib/

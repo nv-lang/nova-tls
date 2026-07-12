@@ -7,8 +7,12 @@
 #
 # Native artifacts (`native/tls_c_shim.c` + headers) are declared through the
 # standard user-FFI build pipeline (`[ffi]`, docs/ffi-cookbook.md) — NOT a
-# compiler-internal special case. Zero Rust/cargo: clang compiles the .c
-# shim, mbedTLS is a prebuilt static lib (vcpkg or system package).
+# compiler-internal special case. Zero Rust/cargo: clang/cl.exe compiles the
+# .c shim; mbedTLS is vendored at native/mbedtls/ (Plan 193 Ф.2 gate-3,
+# 2026-07-12 — see native/mbedtls/VENDORED.md) and self-builds via the
+# generic `[ffi] vendor_src_dirs` build-and-cache mechanism, mirroring how
+# other languages' native modules (e.g. Rust `*-sys` crates) vendor C
+# sources rather than depending on a preinstalled system/vcpkg package.
 
 [package]
 name = "tls"
@@ -28,19 +32,33 @@ src = "src"
 # Mirrors the monorepo's retired nova_rt.h unconditional `#include
 # "tls_shim.h"` (Plan 193 Ф.2 migration note).
 c_shims      = ["native/tls_c_shim.c", "native/tls_shim.h"]
-include_dirs = ["native/"]
+include_dirs = ["native/", "native/mbedtls/include"]
 libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
 # lib_dirs (Plan 193 Ф.2 gate-3, 2026-07-12): conventional drop-in location
-# for the prebuilt mbedTLS static libs (`vcpkg install mbedtls` into this
-# dir, or copy from a system package) — package-relative, so it resolves
-# identically standalone and as an external path-dep (base = this nova.toml's
-# own dir, not the consumer's — see ResolvedFfiConfig::from_manifest doc).
-# Declaring it explicitly (even while empty) is required to arm the generic
-# `[ffi] libs` detect-and-degrade probe (compiler-codegen/src/test_runner.rs
-# `first_missing_ffi_lib` — a bare `libs` with NO `lib_dirs` skips the probe
-# entirely and falls through to the toolchain's default `-l` search, which
-# hard-fails at link time instead of degrading to SKIP). No mbedtls*.lib is
-# vendored here yet (none found in this machine's vcpkg installs either) —
-# the resulting `SkipReason::FfiLibNotFound` is the correct, expected gate
-# outcome until a prebuilt mbedTLS is vendored/declared.
+# for the mbedTLS static libs — either the auto-built vendor cache (default,
+# see vendor_src_dirs below) or a manually dropped-in prebuilt (`vcpkg
+# install mbedtls` into this dir, or copy from a system package; auto-build
+# is skipped when the libs are already present here). Package-relative, so
+# it resolves identically standalone and as an external path-dep (base =
+# this nova.toml's own dir, not the consumer's — see
+# ResolvedFfiConfig::from_manifest doc). Declaring it explicitly (even while
+# empty) is required to arm the generic `[ffi] libs` detect-and-degrade
+# probe (compiler-codegen/src/test_runner.rs `first_missing_ffi_lib` — a
+# bare `libs` with NO `lib_dirs` skips the probe entirely and falls through
+# to the toolchain's default `-l` search, which hard-fails at link time
+# instead of degrading to SKIP).
 lib_dirs     = ["native/lib"]
+# vendor_src_dirs (Plan 193 Ф.2 gate-3, 2026-07-12): mbedTLS v3.6.2 is
+# vendored at native/mbedtls/ (include/ + library/, see
+# native/mbedtls/VENDORED.md — "vendored like other languages' native
+# modules": Rust *-sys crates, not a system/vcpkg dependency). When the
+# `libs` above are missing from `lib_dirs`, the generic build-and-cache
+# mechanism (compiler-codegen/src/test_runner.rs
+# `build_missing_vendor_ffi_libs` — a "195-pattern" generalization of the
+# monorepo's `detect_or_build_libuv` one-time-build-and-cache precedent)
+# compiles every `.c` under this dir and archives the result into
+# `lib_dirs[0]` under each of the three `libs` names, so a clean checkout
+# self-builds mbedTLS on first `nova test` — no manual vcpkg/system install
+# step required. The old detect-and-degrade SKIP (cac9d8e9f) remains the
+# fallback if the build itself fails (e.g. no cl.exe/cc on PATH).
+vendor_src_dirs = ["native/mbedtls/library"]
