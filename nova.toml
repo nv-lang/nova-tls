@@ -30,3 +30,17 @@ src = "src"
 c_shims      = ["native/tls_c_shim.c", "native/tls_shim.h"]
 include_dirs = ["native/"]
 libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
+# lib_dirs (Plan 193 Ф.2 gate-3, 2026-07-12): conventional drop-in location
+# for the prebuilt mbedTLS static libs (`vcpkg install mbedtls` into this
+# dir, or copy from a system package) — package-relative, so it resolves
+# identically standalone and as an external path-dep (base = this nova.toml's
+# own dir, not the consumer's — see ResolvedFfiConfig::from_manifest doc).
+# Declaring it explicitly (even while empty) is required to arm the generic
+# `[ffi] libs` detect-and-degrade probe (compiler-codegen/src/test_runner.rs
+# `first_missing_ffi_lib` — a bare `libs` with NO `lib_dirs` skips the probe
+# entirely and falls through to the toolchain's default `-l` search, which
+# hard-fails at link time instead of degrading to SKIP). No mbedtls*.lib is
+# vendored here yet (none found in this machine's vcpkg installs either) —
+# the resulting `SkipReason::FfiLibNotFound` is the correct, expected gate
+# outcome until a prebuilt mbedTLS is vendored/declared.
+lib_dirs     = ["native/lib"]
