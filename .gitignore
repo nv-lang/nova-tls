@@ -1,0 +1,11 @@
+# Codegen artifacts (mirrors monorepo's std/**/*.c convention — nova test
+# writes generated .c/.exe/.obj next to source files it compiles).
+src/**/*.c
+src/**/*.exe
+src/**/*.obj
+src/**/*.pdb
+src/**/*.ilk
+
+# nova build/test scratch (obj dirs, libuv one-time build cache, lockfile
+# resolution scratch under target/).
+target/

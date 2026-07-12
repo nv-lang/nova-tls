@@ -21,6 +21,12 @@ repository = "https://github.com/nv-lang/nova-tls"
 src = "src"
 
 [ffi]
-c_shims      = ["native/tls_c_shim.c"]
+# tls_shim.h MUST be force-included (not just #include'd from tls_c_shim.c's
+# own TU) — every OTHER translation unit that calls a tls_* extern (any CU
+# using TlsStream) needs the prototype visible in ITS OWN TU too, or C falls
+# back to implicit-int declaration (32-bit) → 64-bit handle truncation.
+# Mirrors the monorepo's retired nova_rt.h unconditional `#include
+# "tls_shim.h"` (Plan 193 Ф.2 migration note).
+c_shims      = ["native/tls_c_shim.c", "native/tls_shim.h"]
 include_dirs = ["native/"]
 libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
