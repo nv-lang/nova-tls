@@ -7,7 +7,7 @@
 // на ошибках ДО создания сессии билдер освобождается tls_cfg_free. TcpStream
 // не утекает ни на одном error-пути (закрывается до возврата Err).
 
-module tls.tls
+module tls
 
 import std.net.{Net, TcpStream}
 

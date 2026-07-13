@@ -29,7 +29,7 @@
 // standard user-FFI build pipeline (docs/ffi-cookbook.md), not a compiler-
 // internal special case.
 
-module tls.tls
+module tls
 
 // ─── Handle newtypes (module-conventions §4а) ────────────────────────────────
 

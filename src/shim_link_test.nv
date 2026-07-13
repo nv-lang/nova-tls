@@ -11,7 +11,7 @@
 // Никакой сети: рукопожатие не завершается — только конфиг, сессия и первый
 // flight из state machine (sans-I/O).
 
-module tls.tls
+module tls
 
 test "link: bad-SNI отвергается реальным шимом кодом INVALID_SNI (-12)" {
     ro c = tls_client_cfg_new()

@@ -21,7 +21,7 @@
 // `io.Read`/`io.Write` (`@read`/`@write`/`@flush`) — `Result[_, IoError]`
 // через `TlsError @to_io_error` (Q3, зеркало TcpStream/NetError).
 
-module tls.tls
+module tls
 
 import std.io.{IoError}
 import std.net.{Net, TcpStream}

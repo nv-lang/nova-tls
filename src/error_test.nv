@@ -8,7 +8,7 @@
 // pre-existing ICE [M-176-xmod-payload-variant-ctor] (P67-LEGACY «Path call
 // return type unknown»); обход тот же, что в std/net/error_test.nv.
 
-module tls.tls
+module tls
 
 import std.net.{NetError}
 

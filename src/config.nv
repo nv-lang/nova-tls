@@ -12,7 +12,7 @@
 // Дедлайны — НЕ поле конфига: supervised-scope на call-site (конвенция 173,
 // линия [M-178-timeout-needs-173]).
 
-module tls.tls
+module tls
 
 /// Как проверять сертификат сервера (D-блок B плана 116).
 #stable(since = "0.1")

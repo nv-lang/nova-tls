@@ -12,7 +12,7 @@
 // дают TlsStream structural `io.Read`/`io.Write` конформанс, НЕ меняя
 // собственную типизированную поверхность (`Result[_, TlsError]`, Plan 177).
 
-module tls.tls
+module tls
 
 import std.io.{ErrorKind, IoError}
 import std.net.{NetError}

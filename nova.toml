@@ -3,7 +3,8 @@
 # Layout: src/ canon (Plan 195 §"Раскладка пакета"). Source root is set via
 # the legacy-but-honored `[lib] src` key (compiler-codegen/src/manifest.rs)
 # so module paths resolve relative to `src/` (D78 — module path does NOT
-# include `src`): `src/tls/stream.nv` -> `module tls`.
+# include `src`). This package's whole surface is root peers (D78 rev-4,
+# Plan 202 Ф.3, 2026-07-13): `src/stream.nv` -> `module tls`.
 #
 # Native artifacts (`native/tls_c_shim.c` + headers) are declared through the
 # standard user-FFI build pipeline (`[ffi]`, docs/ffi-cookbook.md) — NOT a
