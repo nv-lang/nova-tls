@@ -29,7 +29,7 @@
  * Sans-I/O design (Plan 116 D-блок A, unchanged by the backend swap): the
  * shim ONLY encrypts/decrypts/validates. ALL socket traffic is pumped on
  * the Nova side (std/tls/stream.nv) over the byte-surface `Net` effect.
- * mbedTLS's BIO callbacks (`nova_tls_send_cb`/`nova_tls_recv_cb`) read/write
+ * mbedTLS's BIO callbacks (`_tls_send_cb`/`_tls_recv_cb`) read/write
  * two in-memory byte queues (`in_buf`/`out_buf`) rather than a real socket —
  * `tls_read_tls`/`tls_write_tls` are the Nova-side pump's only access to
  * those queues, so mbedTLS never blocks, never touches a file descriptor.
@@ -140,7 +140,7 @@ typedef struct NovaTlsSession {
 
 /* ── Small helpers ────────────────────────────────────────────────────────── */
 
-static void nova_tls_buf_ensure(unsigned char **buf, size_t *cap, size_t need) {
+static void _tls_buf_ensure(unsigned char **buf, size_t *cap, size_t need) {
     if (need <= *cap) { return; }
     size_t nc = *cap ? *cap : 4096;
     while (nc < need) { nc *= 2; }
@@ -150,7 +150,7 @@ static void nova_tls_buf_ensure(unsigned char **buf, size_t *cap, size_t need) {
     *cap = nc;
 }
 
-static nova_int nova_tls_copy_out(const unsigned char *src, size_t srclen, uint8_t *out, nova_int cap) {
+static nova_int _tls_copy_out(const unsigned char *src, size_t srclen, uint8_t *out, nova_int cap) {
     if (out != NULL && cap > 0 && srclen > 0) {
         size_t n = srclen < (size_t)cap ? srclen : (size_t)cap;
         memcpy(out, src, n);
@@ -158,7 +158,7 @@ static nova_int nova_tls_copy_out(const unsigned char *src, size_t srclen, uint8
     return (nova_int)srclen;
 }
 
-static void nova_tls_set_err(NovaTlsSession *s, int kind, const char *msg) {
+static void _tls_set_err(NovaTlsSession *s, int kind, const char *msg) {
     s->last_err_kind = kind;
     if (msg) {
         size_t n = strlen(msg);
@@ -170,7 +170,7 @@ static void nova_tls_set_err(NovaTlsSession *s, int kind, const char *msg) {
     }
 }
 
-static unsigned char *nova_tls_dup_nul(const unsigned char *p, size_t len) {
+static unsigned char *_tls_dup_nul(const unsigned char *p, size_t len) {
     unsigned char *out = (unsigned char *)malloc(len + 1);
     if (!out) { return NULL; }
     if (len) { memcpy(out, p, len); }
@@ -243,7 +243,7 @@ static unsigned char *nova_spki_der(const unsigned char *cert, size_t cert_len, 
  * enough to rustls's ServerName::try_from to keep shim_link_test.nv's
  * "bad name!" (space + '!') rejected with TLS_ERR_INVALID_SNI. */
 
-static int nova_tls_is_ip_literal(const char *s, size_t len) {
+static int _tls_is_ip_literal(const char *s, size_t len) {
     int dots = 0, colons = 0;
     for (size_t i = 0; i < len; i++) {
         char c = s[i];
@@ -254,7 +254,7 @@ static int nova_tls_is_ip_literal(const char *s, size_t len) {
     return (dots > 0 && colons == 0) || colons > 0;
 }
 
-static int nova_tls_label_ok(const char *s, size_t len) {
+static int _tls_label_ok(const char *s, size_t len) {
     if (len == 0 || len > 63) { return 0; }
     for (size_t i = 0; i < len; i++) {
         char c = s[i];
@@ -265,13 +265,13 @@ static int nova_tls_label_ok(const char *s, size_t len) {
     return 1;
 }
 
-static int nova_tls_valid_sni(const char *s, size_t len) {
+static int _tls_valid_sni(const char *s, size_t len) {
     if (len == 0 || len > 253) { return 0; }
-    if (nova_tls_is_ip_literal(s, len)) { return 1; }
+    if (_tls_is_ip_literal(s, len)) { return 1; }
     size_t start = 0;
     for (size_t i = 0; i <= len; i++) {
         if (i == len || s[i] == '.') {
-            if (!nova_tls_label_ok(s + start, i - start)) { return 0; }
+            if (!_tls_label_ok(s + start, i - start)) { return 0; }
             start = i + 1;
         }
     }
@@ -280,10 +280,10 @@ static int nova_tls_valid_sni(const char *s, size_t len) {
 
 /* ── Sans-I/O BIO callbacks: in-memory ciphertext queues ─────────────────── */
 
-static int nova_tls_send_cb(void *ctx, const unsigned char *buf, size_t len) {
+static int _tls_send_cb(void *ctx, const unsigned char *buf, size_t len) {
     NovaTlsSession *s = (NovaTlsSession *)ctx;
     size_t before_cap = s->out_cap;
-    nova_tls_buf_ensure(&s->out_buf, &s->out_cap, s->out_len + len);
+    _tls_buf_ensure(&s->out_buf, &s->out_cap, s->out_len + len);
     if (s->out_cap < s->out_len + len && s->out_cap == before_cap) {
         return MBEDTLS_ERR_SSL_INTERNAL_ERROR; /* OOM */
     }
@@ -292,7 +292,7 @@ static int nova_tls_send_cb(void *ctx, const unsigned char *buf, size_t len) {
     return (int)len;
 }
 
-static int nova_tls_recv_cb(void *ctx, unsigned char *buf, size_t len) {
+static int _tls_recv_cb(void *ctx, unsigned char *buf, size_t len) {
     NovaTlsSession *s = (NovaTlsSession *)ctx;
     size_t avail = s->in_len - s->in_pos;
     if (avail == 0 || len == 0) { return MBEDTLS_ERR_SSL_WANT_READ; }
@@ -304,7 +304,7 @@ static int nova_tls_recv_cb(void *ctx, unsigned char *buf, size_t len) {
 
 /* ── Error classification: mbedTLS rc → stable TLS_ERR_* ─────────────────── */
 
-static int nova_tls_classify(int rc, mbedtls_ssl_context *ssl) {
+static int _tls_classify(int rc, mbedtls_ssl_context *ssl) {
     if (rc == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED) {
         uint32_t flags = mbedtls_ssl_get_verify_result(ssl);
         if (flags & MBEDTLS_X509_BADCERT_CN_MISMATCH) { return TLS_ERR_HOSTNAME_MISMATCH; }
@@ -317,10 +317,10 @@ static int nova_tls_classify(int rc, mbedtls_ssl_context *ssl) {
     return TLS_ERR_HANDSHAKE;
 }
 
-static void nova_tls_set_err_from_rc(NovaTlsSession *s, int kind, int rc) {
+static void _tls_set_err_from_rc(NovaTlsSession *s, int kind, int rc) {
     char buf[128];
     mbedtls_strerror(rc, buf, sizeof(buf));
-    nova_tls_set_err(s, kind, buf);
+    _tls_set_err(s, kind, buf);
 }
 
 /* ── Pinned verifier (SPKI SHA-256; Ф.4.3 parity) ─────────────────────────
@@ -337,7 +337,7 @@ static void nova_tls_set_err_from_rc(NovaTlsSession *s, int kind, int rc) {
  * chain-trust flags mbedTLS computed on its own (a self-signed leaf is
  * expected and fine here — pinning replaces chain trust AND hostname
  * verification, D-блок B). */
-static int nova_tls_verify_pinned_cb(void *ctx, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
+static int _tls_verify_pinned_cb(void *ctx, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
     NovaTlsSession *s = (NovaTlsSession *)ctx;
     (void)flags;
     if (depth != 0) { return 0; /* only the leaf is pinned; ignore intermediates */ }
@@ -361,7 +361,7 @@ static int nova_tls_verify_pinned_cb(void *ctx, mbedtls_x509_crt *crt, int depth
  * (WANT_READ — not an error, the Nova-side pump feeds more and calls
  * again) or fails outright. WANT_WRITE should never happen (our send
  * callback never blocks) but is looped past defensively. */
-static nova_int nova_tls_step(NovaTlsSession *s) {
+static nova_int _tls_step(NovaTlsSession *s) {
     if (mbedtls_ssl_is_handshake_over(&s->ssl)) { return TLS_ERR_OK; }
     for (;;) {
         int rc = mbedtls_ssl_handshake(&s->ssl);
@@ -369,8 +369,8 @@ static nova_int nova_tls_step(NovaTlsSession *s) {
         if (rc == MBEDTLS_ERR_SSL_WANT_READ) { return TLS_ERR_OK; }
         if (rc == MBEDTLS_ERR_SSL_WANT_WRITE) { continue; }
         {
-            int code = nova_tls_classify(rc, &s->ssl);
-            nova_tls_set_err_from_rc(s, code, rc);
+            int code = _tls_classify(rc, &s->ssl);
+            _tls_set_err_from_rc(s, code, rc);
             return code;
         }
     }
@@ -380,7 +380,7 @@ static nova_int nova_tls_step(NovaTlsSession *s) {
 
 static const char NOVA_TLS_ENTROPY_PERS[] = "nova_tls";
 
-static int nova_tls_setup_common(NovaTlsSession *s, int endpoint) {
+static int _tls_setup_common(NovaTlsSession *s, int endpoint) {
     mbedtls_ssl_config_init(&s->conf);
     mbedtls_entropy_init(&s->entropy);
     mbedtls_ctr_drbg_init(&s->ctr_drbg);
@@ -431,7 +431,7 @@ void tls_free(intptr_t h) {
 
 /* ── Config builders ──────────────────────────────────────────────────────── */
 
-static NovaTlsCfgBuilder *nova_tls_cfg_new(int is_server) {
+static NovaTlsCfgBuilder *_tls_cfg_new(int is_server) {
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)calloc(1, sizeof(NovaTlsCfgBuilder));
     if (!b) { return NULL; }
     b->is_server = is_server;
@@ -439,8 +439,8 @@ static NovaTlsCfgBuilder *nova_tls_cfg_new(int is_server) {
     return b;
 }
 
-intptr_t tls_client_cfg_new(void) { return (intptr_t)nova_tls_cfg_new(0); }
-intptr_t tls_server_cfg_new(void) { return (intptr_t)nova_tls_cfg_new(1); }
+intptr_t tls_client_cfg_new(void) { return (intptr_t)_tls_cfg_new(0); }
+intptr_t tls_server_cfg_new(void) { return (intptr_t)_tls_cfg_new(1); }
 
 nova_int tls_cfg_verify_system(intptr_t c) {
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)(intptr_t)c;
@@ -453,7 +453,7 @@ nova_int tls_cfg_verify_pem(intptr_t c, const uint8_t *pem, nova_int len) {
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)(intptr_t)c;
     if (!b || len < 0 || (pem == NULL && len != 0)) { return TLS_ERR_BADARG; }
     free(b->roots_pem);
-    b->roots_pem = nova_tls_dup_nul(pem, (size_t)len);
+    b->roots_pem = _tls_dup_nul(pem, (size_t)len);
     if (!b->roots_pem) { return TLS_ERR_INTERNAL; }
     b->roots_len = (size_t)len + 1; /* includes trailing NUL (mbedtls PEM contract) */
     b->verify_mode = NOVA_TLS_VERIFY_PEM;
@@ -500,8 +500,8 @@ nova_int tls_cfg_cert_key_pem(intptr_t c, const uint8_t *cert, nova_int clen,
                                const uint8_t *key, nova_int klen) {
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)(intptr_t)c;
     if (!b || clen <= 0 || klen <= 0 || cert == NULL || key == NULL) { return TLS_ERR_BADARG; }
-    unsigned char *cert_copy = nova_tls_dup_nul(cert, (size_t)clen);
-    unsigned char *key_copy = nova_tls_dup_nul(key, (size_t)klen);
+    unsigned char *cert_copy = _tls_dup_nul(cert, (size_t)clen);
+    unsigned char *key_copy = _tls_dup_nul(key, (size_t)klen);
     if (!cert_copy || !key_copy) {
         free(cert_copy);
         free(key_copy);
@@ -520,14 +520,14 @@ nova_int tls_cfg_client_auth_pem(intptr_t c, const uint8_t *roots, nova_int len,
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)(intptr_t)c;
     if (!b || len <= 0 || roots == NULL) { return TLS_ERR_BADARG; }
     free(b->client_auth_roots_pem);
-    b->client_auth_roots_pem = nova_tls_dup_nul(roots, (size_t)len);
+    b->client_auth_roots_pem = _tls_dup_nul(roots, (size_t)len);
     if (!b->client_auth_roots_pem) { return TLS_ERR_INTERNAL; }
     b->client_auth_roots_len = (size_t)len + 1;
     b->client_auth_mode = required ? NOVA_TLS_CLIENT_AUTH_REQUIRED : NOVA_TLS_CLIENT_AUTH_OPTIONAL;
     return TLS_ERR_OK;
 }
 
-static void nova_tls_cfg_free_fields(NovaTlsCfgBuilder *b) {
+static void _tls_cfg_free_fields(NovaTlsCfgBuilder *b) {
     free(b->roots_pem);
     free(b->pins);
     if (b->alpn) {
@@ -542,7 +542,7 @@ static void nova_tls_cfg_free_fields(NovaTlsCfgBuilder *b) {
 void tls_cfg_free(intptr_t c) {
     NovaTlsCfgBuilder *b = (NovaTlsCfgBuilder *)(intptr_t)c;
     if (!b) { return; }
-    nova_tls_cfg_free_fields(b);
+    _tls_cfg_free_fields(b);
     free(b);
 }
 
@@ -555,20 +555,20 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
         return 0;
     }
     if (b->is_server) {
-        nova_tls_cfg_free_fields(b);
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_BADARG; }
         return 0;
     }
-    if (!sni || sni_len <= 0 || !nova_tls_valid_sni((const char *)sni, (size_t)sni_len)) {
-        nova_tls_cfg_free_fields(b);
+    if (!sni || sni_len <= 0 || !_tls_valid_sni((const char *)sni, (size_t)sni_len)) {
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_INVALID_SNI; }
         return 0;
     }
     char *sni_cstr = (char *)malloc((size_t)sni_len + 1);
     if (!sni_cstr) {
-        nova_tls_cfg_free_fields(b);
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_INTERNAL; }
         return 0;
@@ -579,13 +579,13 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
     NovaTlsSession *s = (NovaTlsSession *)calloc(1, sizeof(NovaTlsSession));
     if (!s) {
         free(sni_cstr);
-        nova_tls_cfg_free_fields(b);
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_INTERNAL; }
         return 0;
     }
 
-    int rc = nova_tls_setup_common(s, MBEDTLS_SSL_IS_CLIENT);
+    int rc = _tls_setup_common(s, MBEDTLS_SSL_IS_CLIENT);
     int err_code = TLS_ERR_INTERNAL;
     int need_hostname = 0;
 
@@ -623,7 +623,7 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
                     memcpy(s->pins, b->pins, b->pin_count * 32);
                     s->pin_count = b->pin_count;
                     mbedtls_ssl_conf_authmode(&s->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-                    mbedtls_ssl_conf_verify(&s->conf, nova_tls_verify_pinned_cb, s);
+                    mbedtls_ssl_conf_verify(&s->conf, _tls_verify_pinned_cb, s);
                 }
             }
         } else { /* INSECURE */
@@ -661,14 +661,14 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
             if (rc != 0) { err_code = TLS_ERR_INTERNAL; }
         }
         if (rc == 0) {
-            mbedtls_ssl_set_bio(&s->ssl, s, nova_tls_send_cb, nova_tls_recv_cb, NULL);
+            mbedtls_ssl_set_bio(&s->ssl, s, _tls_send_cb, _tls_recv_cb, NULL);
         }
     } else {
         err_code = TLS_ERR_INTERNAL;
     }
 
     free(sni_cstr);
-    nova_tls_cfg_free_fields(b);
+    _tls_cfg_free_fields(b);
     free(b);
 
     if (rc != 0) {
@@ -677,7 +677,7 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
         return 0;
     }
 
-    nova_tls_step(s); /* eagerly produce ClientHello (matches prior rustls behavior) */
+    _tls_step(s); /* eagerly produce ClientHello (matches prior rustls behavior) */
     return (intptr_t)s;
 }
 
@@ -688,7 +688,7 @@ intptr_t tls_server_new(intptr_t c, intptr_t *out_err) {
         return 0;
     }
     if (!b->is_server || !b->cert_pem || !b->key_pem || b->cert_len <= 1 || b->key_len <= 1) {
-        nova_tls_cfg_free_fields(b);
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_BADARG; }
         return 0;
@@ -696,13 +696,13 @@ intptr_t tls_server_new(intptr_t c, intptr_t *out_err) {
 
     NovaTlsSession *s = (NovaTlsSession *)calloc(1, sizeof(NovaTlsSession));
     if (!s) {
-        nova_tls_cfg_free_fields(b);
+        _tls_cfg_free_fields(b);
         free(b);
         if (out_err) { *out_err = TLS_ERR_INTERNAL; }
         return 0;
     }
 
-    int rc = nova_tls_setup_common(s, MBEDTLS_SSL_IS_SERVER);
+    int rc = _tls_setup_common(s, MBEDTLS_SSL_IS_SERVER);
     int err_code = TLS_ERR_INTERNAL;
 
     if (rc == 0) {
@@ -743,13 +743,13 @@ intptr_t tls_server_new(intptr_t c, intptr_t *out_err) {
             if (rc != 0) { err_code = TLS_ERR_INTERNAL; }
         }
         if (rc == 0) {
-            mbedtls_ssl_set_bio(&s->ssl, s, nova_tls_send_cb, nova_tls_recv_cb, NULL);
+            mbedtls_ssl_set_bio(&s->ssl, s, _tls_send_cb, _tls_recv_cb, NULL);
         }
     } else {
         err_code = TLS_ERR_INTERNAL;
     }
 
-    nova_tls_cfg_free_fields(b);
+    _tls_cfg_free_fields(b);
     free(b);
 
     if (rc != 0) {
@@ -758,7 +758,7 @@ intptr_t tls_server_new(intptr_t c, intptr_t *out_err) {
         return 0;
     }
 
-    nova_tls_step(s); /* server has nothing to send yet; will WANT_READ for ClientHello */
+    _tls_step(s); /* server has nothing to send yet; will WANT_READ for ClientHello */
     return (intptr_t)s;
 }
 
@@ -789,7 +789,7 @@ nova_int tls_read_tls(intptr_t h, const uint8_t *p, nova_int len) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
     if (len < 0 || (p == NULL && len != 0)) {
-        nova_tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
+        _tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
         return TLS_ERR_BADARG;
     }
     if (len == 0) { return 0; }
@@ -800,9 +800,9 @@ nova_int tls_read_tls(intptr_t h, const uint8_t *p, nova_int len) {
         s->in_pos = 0;
     }
     size_t before_cap = s->in_cap;
-    nova_tls_buf_ensure(&s->in_buf, &s->in_cap, s->in_len + (size_t)len);
+    _tls_buf_ensure(&s->in_buf, &s->in_cap, s->in_len + (size_t)len);
     if (s->in_cap < s->in_len + (size_t)len && s->in_cap == before_cap) {
-        nova_tls_set_err(s, TLS_ERR_INTERNAL, "out of memory");
+        _tls_set_err(s, TLS_ERR_INTERNAL, "out of memory");
         return TLS_ERR_INTERNAL;
     }
     memcpy(s->in_buf + s->in_len, p, (size_t)len);
@@ -813,7 +813,7 @@ nova_int tls_read_tls(intptr_t h, const uint8_t *p, nova_int len) {
 nova_int tls_process(intptr_t h) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
-    if (!mbedtls_ssl_is_handshake_over(&s->ssl)) { return nova_tls_step(s); }
+    if (!mbedtls_ssl_is_handshake_over(&s->ssl)) { return _tls_step(s); }
     return TLS_ERR_OK; /* app-data decrypt happens lazily inside tls_read_plain */
 }
 
@@ -821,7 +821,7 @@ nova_int tls_write_tls(intptr_t h, uint8_t *out, nova_int cap) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
     if (out == NULL || cap <= 0) {
-        nova_tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
+        _tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
         return TLS_ERR_BADARG;
     }
     if (s->out_len == 0) { return 0; }
@@ -836,7 +836,7 @@ nova_int tls_read_plain(intptr_t h, uint8_t *out, nova_int cap) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
     if (out == NULL || cap <= 0) {
-        nova_tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
+        _tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
         return TLS_ERR_BADARG;
     }
     int rc = mbedtls_ssl_read(&s->ssl, out, (size_t)cap);
@@ -844,8 +844,8 @@ nova_int tls_read_plain(intptr_t h, uint8_t *out, nova_int cap) {
     if (rc == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) { return TLS_READ_CLOSE_NOTIFY; }
     if (rc == 0 || rc == MBEDTLS_ERR_SSL_WANT_READ) { return 0; }
     {
-        int code = nova_tls_classify(rc, &s->ssl);
-        nova_tls_set_err_from_rc(s, code, rc);
+        int code = _tls_classify(rc, &s->ssl);
+        _tls_set_err_from_rc(s, code, rc);
         return code;
     }
 }
@@ -854,7 +854,7 @@ nova_int tls_write_plain(intptr_t h, const uint8_t *p, nova_int len) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
     if (len < 0 || (p == NULL && len != 0)) {
-        nova_tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
+        _tls_set_err(s, TLS_ERR_BADARG, "bad buffer");
         return TLS_ERR_BADARG;
     }
     if (len == 0) { return 0; }
@@ -863,12 +863,12 @@ nova_int tls_write_plain(intptr_t h, const uint8_t *p, nova_int len) {
     if (rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE) {
         /* Should not happen: our BIO callbacks never block. Surface as an
          * error rather than 0 (Nova's write_all treats n<=0 as failure). */
-        nova_tls_set_err(s, TLS_ERR_INTERNAL, "unexpected WANT_READ/WRITE from mbedtls_ssl_write");
+        _tls_set_err(s, TLS_ERR_INTERNAL, "unexpected WANT_READ/WRITE from mbedtls_ssl_write");
         return TLS_ERR_INTERNAL;
     }
     {
-        int code = nova_tls_classify(rc, &s->ssl);
-        nova_tls_set_err_from_rc(s, code, rc);
+        int code = _tls_classify(rc, &s->ssl);
+        _tls_set_err_from_rc(s, code, rc);
         return code;
     }
 }
@@ -889,7 +889,7 @@ nova_int tls_alpn(intptr_t h, uint8_t *out, nova_int cap) {
     if (!s) { return TLS_ERR_BADARG; }
     const char *p = mbedtls_ssl_get_alpn_protocol(&s->ssl);
     if (!p) { return 0; }
-    return nova_tls_copy_out((const unsigned char *)p, strlen(p), out, cap);
+    return _tls_copy_out((const unsigned char *)p, strlen(p), out, cap);
 }
 
 nova_int tls_version(intptr_t h) {
@@ -905,7 +905,7 @@ nova_int tls_cipher_suite(intptr_t h, uint8_t *out, nova_int cap) {
     if (!s) { return TLS_ERR_BADARG; }
     const char *name = mbedtls_ssl_get_ciphersuite(&s->ssl);
     if (!name) { return 0; }
-    return nova_tls_copy_out((const unsigned char *)name, strlen(name), out, cap);
+    return _tls_copy_out((const unsigned char *)name, strlen(name), out, cap);
 }
 
 nova_int tls_peer_cert_der(intptr_t h, nova_int i, uint8_t *out, nova_int cap) {
@@ -915,7 +915,7 @@ nova_int tls_peer_cert_der(intptr_t h, nova_int i, uint8_t *out, nova_int cap) {
     const mbedtls_x509_crt *cert = mbedtls_ssl_get_peer_cert(&s->ssl);
     for (nova_int k = 0; cert && k < i; k++) { cert = cert->next; }
     if (!cert) { return 0; }
-    return nova_tls_copy_out(cert->raw.p, cert->raw.len, out, cap);
+    return _tls_copy_out(cert->raw.p, cert->raw.len, out, cap);
 }
 
 /* ── Error detail ─────────────────────────────────────────────────────────── */
@@ -928,7 +928,7 @@ nova_int tls_last_error_kind(intptr_t h) {
 nova_int tls_last_error(intptr_t h, uint8_t *out, nova_int cap) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
-    return nova_tls_copy_out((const unsigned char *)s->last_err, strlen(s->last_err), out, cap);
+    return _tls_copy_out((const unsigned char *)s->last_err, strlen(s->last_err), out, cap);
 }
 
 #else /* !NOVA_USE_MBEDTLS — Q11 feature-gate stubs (mbedTLS not built for this host) */

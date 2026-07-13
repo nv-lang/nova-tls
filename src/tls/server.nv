@@ -51,28 +51,29 @@ fn build_server_cfg(config ServerConfig) -> Result[CTlsCfgHandle, TlsError] {
 /// ошибке сокет закрывается внутри).
 #stable(since = "0.1")
 export fn TlsStream.accept(consume stream TcpStream, config ServerConfig) Net -> Result[TlsStream, TlsError] {
-    // Каждый путь потребляет stream ровно один раз (см. client.nv, D131).
-    match build_server_cfg(config) {
-        Err(e) => {
-            stream.close()
-            Err(e)
+    // Канон Plan 201 (D188-амендмент v3) — см. client.nv: блок владеет
+    // stream, `return Err(...)` закрывает сокет cleanup'ом exactly-once;
+    // успешный handshake выносит stream ПРЯМО в
+    // `return Ok(TlsStream.wrap(stream, session))` — ровно одно вхождение
+    // `stream`, аргументом consume-параметра `wrap`, дизарм в момент
+    // передачи владения. `mut session_out`/`ro s`/wrap-снаружи (v2-канон)
+    // больше не нужен.
+    consume stream {
+        ro c = match build_server_cfg(config) {
+            Err(e) => { return Err(e) }        // cleanup закрывает stream
+            Ok(cc) => cc
         }
-        Ok(c) => {
-            mut err int = 0
-            ro session = unsafe { tls_server_new(c, &err) }
-            if (session as int) == 0 {
-                stream.close()
-                Err(TlsError.from_shim(err, "server session"))
-            } else {
-                // См. client.nv: pump по view-borrow, wrap — только в Ok(...).
-                match pump_handshake(stream, session) {
-                    Ok(_)  => Ok(TlsStream.wrap(stream, session))
-                    Err(e) => {
-                        stream.close()
-                        tls_free(session)
-                        Err(e)
-                    }
-                }
+        mut err int = 0
+        ro session = unsafe { tls_server_new(c, &err) }
+        if (session as int) == 0 {
+            return Err(TlsError.from_shim(err, "server session"))
+        }
+        // См. client.nv: pump по view-borrow; wrap — прямо в return.
+        match pump_handshake(stream, session) {
+            Ok(_)  => { return Ok(TlsStream.wrap(stream, session)) }  // дизарм: stream → wrap
+            Err(e) => {
+                tls_free(session)
+                return Err(e)                  // cleanup закрывает stream
             }
         }
     }
