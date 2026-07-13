@@ -9,10 +9,10 @@
 //
 // Пампинг — СВОБОДНЫЕ функции над `(mut tcp TcpStream, session CTlsHandle)`:
 // `mut`-параметр = view-borrow (не потребляет), поэтому connect/accept гоняют
-// handshake ДО конструирования TlsStream, а сам TlsStream строится одним
-// вызовом `wrap` прямо в `Ok(...)` — единственная форма, которую распознаёт
-// консерв-анализ ([M-178-consume-field-ctor-from-var]: move переменной в
-// consume-поле/пейлоад не распознаётся).
+// handshake ДО конструирования TlsStream, а сам TlsStream строится `wrap`'ом
+// прямо в `Ok(...)`; внутри `wrap` — прямой move consume-параметра в
+// consume-поле record-литерала (D133-амендмент 2026-07-13, fix
+// [M-178-consume-field-ctor-from-var]).
 //
 // `consume` БЕЗ `value`: запись держит consume-поле `tcp` — value-копия
 // оставила бы обязательство владельца неразряженным (прецедент `Body`).
@@ -38,14 +38,10 @@ export type TlsStream consume {
     priv session CTlsHandle      // mbedTLS-сессия в шиме (освобождается в @close)
 }
 
-// [M-178-consume-field-ctor-from-var]: pass-through потребляет параметр, а поле
-// инициализируется ВЫЗОВОМ (единственная распознаваемая форма).
-fn tcp_move(consume s TcpStream) -> TcpStream => s
-
 // Package-private фабрика (connect/accept зовут её прямо в Ok(...)-пейлоаде,
-// ПОСЛЕ завершённого handshake).
+// ПОСЛЕ завершённого handshake). Прямой move `stream` в consume-поле `tcp`.
 fn TlsStream.wrap(consume stream TcpStream, session CTlsHandle) -> TlsStream =>
-    { tcp: tcp_move(stream), session }
+    { tcp: stream, session }
 
 // ─── Ошибки шима ──────────────────────────────────────────────────────────────
 
