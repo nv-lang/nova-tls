@@ -9,7 +9,7 @@
 // при смене fixture пин обновить (пересчитать openssl x509 -pubkey | pkey
 // -pubin -outform der | dgst -sha256).
 
-module tls.tls
+module tls
 
 import std.net.{Net, TcpListener, TcpStream, SocketAddr, NetError, real_net}
 

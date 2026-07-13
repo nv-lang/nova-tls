@@ -7,7 +7,7 @@
 // ro-байндинг перед .method() — обход [M-176-xmod-payload-variant-ctor]
 // (см. error_test.nv).
 
-module tls.tls
+module tls
 
 test "ClientConfig.new — дефолты: SNI, SystemRoots, alpn http/1.1" {
     ro cfg = ClientConfig.new("api.example.com")

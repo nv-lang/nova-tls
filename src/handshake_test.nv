@@ -10,7 +10,7 @@
 // openssl, README рядом). Встраиваются через embed (D412) — без Fs-эффекта
 // в тестах.
 
-module tls.tls
+module tls
 
 import std.net.{Net, TcpListener, TcpStream, SocketAddr, NetError, real_net}
 

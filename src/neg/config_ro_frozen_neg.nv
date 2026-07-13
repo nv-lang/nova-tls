@@ -8,7 +8,7 @@
 
 module neg.config_ro_frozen_neg
 
-import tls.tls.{ClientConfig}
+import tls.{ClientConfig}
 
 fn main() -> () {
     ro cfg = ClientConfig.new("api.example.com")

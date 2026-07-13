@@ -7,7 +7,7 @@
 // client_cert.pem/client_key.pem (leaf, EKU=clientAuth). Сервер доверяет CA;
 // клиент предъявляет leaf.
 
-module tls.tls
+module tls
 
 import std.net.{Net, TcpListener, TcpStream, SocketAddr, NetError, real_net}
 

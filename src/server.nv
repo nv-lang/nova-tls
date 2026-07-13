@@ -6,7 +6,7 @@
 // TcpStream закрывается на всех error-путях. mTLS-режимы (ClientCertMode) —
 // данные уже проходят границу.
 
-module tls.tls
+module tls
 
 import std.net.{Net, TcpStream}
 

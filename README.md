@@ -21,12 +21,12 @@ mbedTLS backend swap) into a standalone repository per
 ([Plan 195](https://github.com/nv-lang/nova/blob/main/docs/plans/195-native-modules-c-not-rust.md):
 `.nv` facade + `.c` shim + prebuilt `.lib`, wired through `[ffi]`, zero Rust).
 Public API is unchanged from `std.tls` — only the module path moved
-(`std.tls.*` -> `tls.tls.*`; see "Module path" note below).
+(`std.tls.*` -> `tls.*`; see "Module path" note below).
 
 ## Usage
 
 ```nova
-import tls.tls.{TlsStream, ClientConfig, VerificationMode}
+import tls.{TlsStream, ClientConfig, VerificationMode}
 import std.net.{Net, TcpStream, SocketAddr, real_net}
 
 fn fetch(host str, port u16) Net -> Result[(), TlsError] {
@@ -49,7 +49,7 @@ nova-tls/
 │   ├── tls_c_shim.c      mbedTLS backend (compiled via [ffi] c_shims)
 │   ├── tls_shim.h         C-side prototypes (Nova <-> C ABI contract)
 │   └── tls_mozilla_roots.h  compiled-in Mozilla root CA bundle
-└── src/tls/
+└── src/
     ├── ffi.nv             extern "C" fn declarations against native/tls_c_shim.c
     ├── error.nv            TlsError (typed error surface)
     ├── config.nv           ClientConfig / ServerConfig / VerificationMode / ClientCertMode
@@ -63,21 +63,21 @@ nova-tls/
 
 ## Module path
 
-D78 (`module = parent_dir.target`, spec/decisions/07-modules.md) always
-prefixes a root-level file or folder-module with the **package name**
-(`[package] name = "tls"`) as `parent`. Since this package's whole surface
-lives in one folder-peer domain also named `tls/` (`src/tls/*.nv`), the
-resulting module is `tls.tls` (not the bare `tls` shown as the aspirational
-example in the D78 external-package-naming amendment, `spec/decisions/
-07-modules.md` "Именование внешних пакетов-репозиториев" / `docs/guide/
-authoring-a-module.md` §8) — confirmed empirically against the compiler's
-`E_D78_MODULE_PATH_MISMATCH` check (compiler-codegen/src/manifest.rs
-`check_module_path_with_kind`). A bare single-segment `tls` module is not
-reachable for a root-level item under the current rev-3 implementation
-(tested: neither a lone `src/tls.nv` facade nor flattening the domain files
-directly into `src/*.nv` produces it — flattening additionally breaks the
-same-module peer relationship the facade files rely on). Import as
-`import tls.tls.{TlsStream, ...}`.
+D78 rev-4 (root peers, `spec/decisions/07-modules.md` "Root peers —
+`.nv`-файлы прямо в source root") lets `.nv` files that sit directly in
+the package's source root (`src/`, per `[lib] src` above) declare the
+single-segment `module <package_name>` form — a peer group analogous to
+Cargo's `lib.rs`. This package's whole surface lives directly in `src/`
+(`src/{client,server,stream,...}.nv`, all declaring `module tls`), so the
+resulting module is the bare package name, `tls` — no statter. Import as
+`import tls.{TlsStream, ...}`, both from another package's `[dependencies]`
+consumer and from an independent same-package file (e.g. `src/neg/*.nv`
+uses `import tls.{ClientConfig}` to reach these peers).
+
+Before the rev-4 amendment this package used to live at `src/tls/*.nv`
+under the older rev-3 `parent_dir.target` rule, which forced the domain
+folder to repeat the package name (`module tls.tls`, import
+`tls.tls.{...}`) — migrated to root peers 2026-07-13 (Plan 202 Ф.3).
 
 ## Building standalone
 
@@ -111,7 +111,7 @@ export NOVA_RT_DIR=/path/to/nova/compiler-codegen/nova_rt
 # single-file builds of a library CU can hit generic-inference ambiguities
 # that a full test CU resolves via its own call sites (verified upstream:
 # the same `ffi.nv` hits it identically inside the Nova monorepo).
-nova test src/tls
+nova test src
 ```
 
 ## License
