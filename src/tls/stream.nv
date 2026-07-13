@@ -320,3 +320,12 @@ export fn TlsStream consume @close() Net {
     @tcp.close()
     tls_free(@session)
 }
+
+/// D188 `Cleanup[never]`-имплементация (Plan 201): cleanup = `@close()`
+/// (graceful close_notify → закрытие TCP → освобождение сессии). Делает
+/// `TlsStream` пригодным для `consume s = … { … }` / `consume s { … }`
+/// scope-block'ов — сокет/сессия не утекают ни на одном пути выхода.
+#stable(since = "0.1")
+export fn TlsStream consume @cleanup(_outcome ScopeOutcome) -> () {
+    @close()
+}

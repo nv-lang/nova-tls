@@ -73,39 +73,36 @@ fn build_client_cfg(config ClientConfig) -> Result[CTlsCfgHandle, TlsError] {
 /// (`[M-116-connect-oneshot]`).
 #stable(since = "0.1")
 export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -> Result[TlsStream, TlsError] {
-    // Вся fallible-подготовка ДО первого касания stream; далее каждый путь
-    // потребляет stream РОВНО один раз (D131: без early-return в арме —
-    // path-merge консерв-анализа его не моделирует).
-    ro pre = if config.server_name.byte_len() == 0 {
-        Err(TlsError.InvalidServerName("server_name must not be empty (SNI is mandatory)"))
-    } else {
-        build_client_cfg(config)
-    }
-    match pre {
-        Err(e) => {
-            stream.close()
-            Err(e)
+    // Канон Plan 201 (D188 re-consume блок): блок ВЛАДЕЕТ stream — любой
+    // не-tail выход (`return Err(...)`) закрывает сокет cleanup'ом
+    // exactly-once (ручные stream.close() ×4 ушли); tail-вынос `stream`
+    // дизармит cleanup — владение уходит `s` и дальше в wrap. Session
+    // наружу блока — через mut-локал (tail может вынести только сам stream).
+    mut session_out = CTlsHandle(0)
+    ro s = consume stream {
+        if config.server_name.byte_len() == 0 {
+            return Err(TlsError.InvalidServerName("server_name must not be empty (SNI is mandatory)"))
         }
-        Ok(c) => {
-            ro sni = config.server_name.bytes()
-            mut err int = 0
-            ro session = unsafe { tls_client_new(c, sni.ptr(), sni.len(), &err) }
-            if (session as int) == 0 {
-                stream.close()
-                Err(TlsError.from_shim(err, "client session"))
-            } else {
-                // stream уходит в pump view-borrow'ом (mut-параметр не
-                // потребляет); TlsStream строится ТОЛЬКО после успешного
-                // handshake — прямо в Ok(...) вызовом wrap (D131/D133).
-                match pump_handshake(stream, session) {
-                    Ok(_)  => Ok(TlsStream.wrap(stream, session))
-                    Err(e) => {
-                        stream.close()
-                        tls_free(session)
-                        Err(e)
-                    }
-                }
+        ro c = match build_client_cfg(config) {
+            Err(e) => { return Err(e) }        // cleanup закрывает stream
+            Ok(cc) => cc
+        }
+        ro sni = config.server_name.bytes()
+        mut err int = 0
+        ro session = unsafe { tls_client_new(c, sni.ptr(), sni.len(), &err) }
+        if (session as int) == 0 {
+            return Err(TlsError.from_shim(err, "client session"))
+        }
+        // stream уходит в pump view-borrow'ом (mut-параметр не потребляет);
+        // TlsStream строится ТОЛЬКО после успешного handshake (D131/D133).
+        match pump_handshake(stream, session) {
+            Ok(_)  => { session_out = session }
+            Err(e) => {
+                tls_free(session)
+                return Err(e)                  // cleanup закрывает stream
             }
         }
+        stream                                 // tail-вынос: cleanup дизармлен
     }
+    Ok(TlsStream.wrap(s, session_out))
 }
