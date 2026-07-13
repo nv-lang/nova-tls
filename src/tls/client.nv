@@ -73,13 +73,15 @@ fn build_client_cfg(config ClientConfig) -> Result[CTlsCfgHandle, TlsError] {
 /// (`[M-116-connect-oneshot]`).
 #stable(since = "0.1")
 export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -> Result[TlsStream, TlsError] {
-    // Канон Plan 201 (D188 re-consume блок): блок ВЛАДЕЕТ stream — любой
-    // не-tail выход (`return Err(...)`) закрывает сокет cleanup'ом
-    // exactly-once (ручные stream.close() ×4 ушли); tail-вынос `stream`
-    // дизармит cleanup — владение уходит `s` и дальше в wrap. Session
-    // наружу блока — через mut-локал (tail может вынести только сам stream).
-    mut session_out = CTlsHandle(0)
-    ro s = consume stream {
+    // Канон Plan 201 (D188-амендмент v3, «однократный вынос через
+    // выражение»): блок ВЛАДЕЕТ stream — любой ранний `return Err(...)`
+    // закрывает сокет cleanup'ом exactly-once; успешный handshake выносит
+    // stream ПРЯМО в `return Ok(TlsStream.wrap(stream, session))` — ровно
+    // одно вхождение `stream`, аргументом consume-параметра `wrap`, дизарм
+    // в момент передачи владения (spec D188 §«Амендмент v3»). Промежуточный
+    // `mut session_out` + `ro s` + wrap СНАРУЖИ блока (v2-канон) больше не
+    // нужен.
+    consume stream {
         if config.server_name.byte_len() == 0 {
             return Err(TlsError.InvalidServerName("server_name must not be empty (SNI is mandatory)"))
         }
@@ -96,13 +98,11 @@ export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -
         // stream уходит в pump view-borrow'ом (mut-параметр не потребляет);
         // TlsStream строится ТОЛЬКО после успешного handshake (D131/D133).
         match pump_handshake(stream, session) {
-            Ok(_)  => { session_out = session }
+            Ok(_)  => { return Ok(TlsStream.wrap(stream, session)) }  // дизарм: stream → wrap
             Err(e) => {
                 tls_free(session)
                 return Err(e)                  // cleanup закрывает stream
             }
         }
-        stream                                 // tail-вынос: cleanup дизармлен
     }
-    Ok(TlsStream.wrap(s, session_out))
 }
