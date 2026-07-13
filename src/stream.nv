@@ -40,7 +40,7 @@ export type TlsStream consume {
 
 // Package-private фабрика (connect/accept зовут её прямо в Ok(...)-пейлоаде,
 // ПОСЛЕ завершённого handshake). Прямой move `stream` в consume-поле `tcp`.
-fn TlsStream.wrap(consume stream TcpStream, session CTlsHandle) -> TlsStream =>
+fn TlsStream.new(consume stream TcpStream, session CTlsHandle) -> TlsStream =>
     { tcp: stream, session }
 
 // ─── Ошибки шима ──────────────────────────────────────────────────────────────

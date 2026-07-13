@@ -54,7 +54,7 @@ export fn TlsStream.accept(consume stream TcpStream, config ServerConfig) Net ->
     // Канон Plan 201 (D188-амендмент v3) — см. client.nv: блок владеет
     // stream, `return Err(...)` закрывает сокет cleanup'ом exactly-once;
     // успешный handshake выносит stream ПРЯМО в
-    // `return Ok(TlsStream.wrap(stream, session))` — ровно одно вхождение
+    // `return Ok(TlsStream.new(stream, session))` — ровно одно вхождение
     // `stream`, аргументом consume-параметра `wrap`, дизарм в момент
     // передачи владения. `mut session_out`/`ro s`/wrap-снаружи (v2-канон)
     // больше не нужен.
@@ -70,7 +70,7 @@ export fn TlsStream.accept(consume stream TcpStream, config ServerConfig) Net ->
         }
         // См. client.nv: pump по view-borrow; wrap — прямо в return.
         match pump_handshake(stream, session) {
-            Ok(_)  => { return Ok(TlsStream.wrap(stream, session)) }  // дизарм: stream → wrap
+            Ok(_)  => { return Ok(TlsStream.new(stream, session)) }  // дизарм: stream → new
             Err(e) => {
                 tls_free(session)
                 return Err(e)                  // cleanup закрывает stream

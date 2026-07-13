@@ -76,7 +76,7 @@ export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -
     // Канон Plan 201 (D188-амендмент v3, «однократный вынос через
     // выражение»): блок ВЛАДЕЕТ stream — любой ранний `return Err(...)`
     // закрывает сокет cleanup'ом exactly-once; успешный handshake выносит
-    // stream ПРЯМО в `return Ok(TlsStream.wrap(stream, session))` — ровно
+    // stream ПРЯМО в `return Ok(TlsStream.new(stream, session))` — ровно
     // одно вхождение `stream`, аргументом consume-параметра `wrap`, дизарм
     // в момент передачи владения (spec D188 §«Амендмент v3»). Промежуточный
     // `mut session_out` + `ro s` + wrap СНАРУЖИ блока (v2-канон) больше не
@@ -98,7 +98,7 @@ export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -
         // stream уходит в pump view-borrow'ом (mut-параметр не потребляет);
         // TlsStream строится ТОЛЬКО после успешного handshake (D131/D133).
         match pump_handshake(stream, session) {
-            Ok(_)  => { return Ok(TlsStream.wrap(stream, session)) }  // дизарм: stream → wrap
+            Ok(_)  => { return Ok(TlsStream.new(stream, session)) }  // дизарм: stream → new
             Err(e) => {
                 tls_free(session)
                 return Err(e)                  // cleanup закрывает stream
