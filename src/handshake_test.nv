@@ -22,19 +22,7 @@ import std.net.{Net, TcpListener, TcpStream, SocketAddr, NetError, real_net}
 fn fixture_cert() -> []u8 => embed("testdata/localhost_cert.pem")
 fn fixture_key() -> []u8 => embed("testdata/localhost_key.pem")
 
-fn must_listener(r Result[TcpListener, NetError]) -> TcpListener {
-    match r {
-        Ok(l)  => l
-        Err(_) => panic("bind failed")
-    }
-}
 
-fn must_tcp(r Result[TcpStream, NetError]) -> TcpStream {
-    match r {
-        Ok(s)  => s
-        Err(_) => panic("tcp failed")
-    }
-}
 
 fn must_tls(r Result[TlsStream, TlsError]) -> TlsStream {
     match r {
@@ -49,13 +37,13 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
         supervised {
             // Сервер: bind в своей фибре, порт в канал, один accept + TLS + echo.
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 // Один accept → listener можно закрыть сразу (D133: panic-арм
                 // ниже не снимал бы его обязательство).
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 // D133: panic-арм не снимает consume-обязательство → ошибки
@@ -76,7 +64,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                 consume tls = must_tls(TlsStream.connect(conn, ccfg))
@@ -117,11 +105,11 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 // Клиент отвергнет наш серт (bad_certificate alert) → Err;
                 // точный вариант зависит от тайминга alert vs reset — важно,
@@ -137,7 +125,7 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 // Серт покрывает ТОЛЬКО localhost/127.0.0.1 — wrong.example не пройдёт.
                 ro ccfg = ClientConfig.new("wrong.example")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
@@ -163,9 +151,9 @@ test "NEG-runtime: пустой SNI отвергается ДО сокет-тр�
         supervised {
             spawn {
                 // Пустое имя: сокет закрывается внутри, ошибка типизирована.
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ro port = lst.local_port()
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro ccfg = ClientConfig.new("")
                 match TlsStream.connect(conn, ccfg) {
                     Ok(s)  => {
@@ -180,7 +168,7 @@ test "NEG-runtime: пустой SNI отвергается ДО сокет-тр�
                     }
                 }
                 // Мусорный PEM: server-конфиг отвергается до handshake.
-                consume conn2 = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn2 = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro scfg = ServerConfig.new("not a pem".bytes(), "not a key".bytes())
                 match TlsStream.accept(conn2, scfg) {
                     Ok(s)  => {

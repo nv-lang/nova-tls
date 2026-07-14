@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // nova-tls: режимы верификации + ALPN-негоциация на loopback-паре (real_net).
 // Extracted from monorepo std/tls (Plan 193 Ф.1). Хелперы
-// (must_listener/must_tcp/fixture_cert/fixture_key) — из handshake_test.nv
+// (must_tls/fixture_cert/fixture_key) — из handshake_test.nv
 // (тот же folder-CU модуля tls).
 //
 // SPKI-пин localhost_cert.pem (SHA-256 SubjectPublicKeyInfo) — вычислен
@@ -24,11 +24,11 @@ test "T4-Pinned: правильный SPKI-пин — рукопожатие п�
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 tls.close()
@@ -36,7 +36,7 @@ test "T4-Pinned: правильный SPKI-пин — рукопожатие п�
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro pins = Vec[[]u8].of(fixture_pin())
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.Pinned(pins))
@@ -52,11 +52,11 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
                     Ok(s)  => { s.close() assert(false) }
@@ -66,7 +66,7 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro pins = Vec[[]u8].of(x"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00")
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.Pinned(pins))
@@ -90,11 +90,11 @@ test "T4-Pinned: пиннинг заменяет hostname-проверку — �
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 tls.close()
@@ -102,7 +102,7 @@ test "T4-Pinned: пиннинг заменяет hostname-проверку — �
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro pins = Vec[[]u8].of(fixture_pin())
                 // wrong.example НЕ покрыт сертом, но при Pinned hostname не проверяется.
                 ro ccfg = ClientConfig.new("wrong.example")
@@ -121,11 +121,11 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
                     Ok(s)  => { s.close() assert(false) }
@@ -135,7 +135,7 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 // Дефолтный ClientConfig.new = SystemRoots (Mozilla bundle) —
                 // самоподписанный серт там отсутствует.
                 ro ccfg = ClientConfig.new("localhost")
@@ -161,11 +161,11 @@ test "T4-ALPN: пересечение выбирает общий протоко
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 // Сервер поддерживает только http/1.1.
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
@@ -174,7 +174,7 @@ test "T4-ALPN: пересечение выбирает общий протоко
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 // Клиент предпочитает h2, но принимает http/1.1.
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
@@ -193,11 +193,11 @@ test "T4-ALPN-NEG: непересекающиеся списки → handshake f
         ro ch_port = Channel.new(1)
         supervised {
             spawn {
-                consume lst = must_listener(TcpListener.bind(SocketAddr.loopback(0)))
+                consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = must_tcp(accepted)
+                consume conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 // Сервер шлёт no_application_protocol alert → accept тоже Err.
                 match TlsStream.accept(conn, scfg) {
@@ -208,7 +208,7 @@ test "T4-ALPN-NEG: непересекающиеся списки → handshake f
             spawn {
                 ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                 assert(port > 0)
-                consume conn = must_tcp(TcpStream.connect(SocketAddr.loopback(port)))
+                consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                     .alpn_protocols(["h2"])   // только h2, сервер только http/1.1
