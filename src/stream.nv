@@ -47,13 +47,14 @@ fn TlsStream.new(consume stream TcpStream, session CTlsHandle) -> TlsStream =>
 
 // Типизированная ошибка из per-session error-канала шима (kind + текст).
 fn shim_error(h CTlsHandle, op str) -> TlsError {
+    const ERR_BUF_CAP = 256
     ro kind = tls_last_error_kind(h)
     mut buf []u8 = []u8.new()
-    buf.resize(256, 0 as u8)
-    ro n = unsafe { tls_last_error(h, buf.ptr(), 256) }
-    ro m = if n < 0 { 0 } else if n > 256 { 256 } else { n }
+    buf.resize(ERR_BUF_CAP, 0 as u8)
+    ro n = unsafe { tls_last_error(h, buf.ptr(), ERR_BUF_CAP) }
+    ro n = n.clamp(0, ERR_BUF_CAP)
     // [M-174.1-vec-method-chain-elem-erasure]: явный []u8-локал (net-образец).
-    ro msg_bytes []u8 = buf[0..m]
+    ro msg_bytes []u8 = buf[0..n]
     ro msg = msg_bytes.decode_utf8() ?? op
     TlsError.from_shim(kind, msg)
 }
