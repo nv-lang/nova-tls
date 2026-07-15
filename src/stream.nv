@@ -55,7 +55,7 @@ fn shim_error(h CTlsHandle, op str) -> TlsError {
     ro n = n.clamp(0, ERR_BUF_CAP)
     // [M-174.1-vec-method-chain-elem-erasure]: явный []u8-локал (net-образец).
     ro msg_bytes []u8 = buf[0..n]
-    ro msg = msg_bytes.decode_utf8() ?? op
+    ro msg = msg_bytes.to_str() ?? op
     TlsError.from_shim(kind, msg)
 }
 
@@ -237,13 +237,11 @@ export fn TlsStream mut @read_to_vec(max int) Net -> Result[[]u8, TlsError] {
 }
 
 /// Прочитать до `max` байт и декодировать как UTF-8.
-/// [M-174.1-to-str-name-collision-codegen-bug]: через `@decode_utf8()` —
-/// у `TlsError` свой `@to_str()` (net-прецедент).
 #stable(since = "0.1")
 export fn TlsStream mut @read_text(max int) Net -> Result[str, TlsError] {
     match @read_to_vec(max) {
         Ok(bytes) => {
-            match bytes.decode_utf8() {
+            match bytes.to_str() {
                 Ok(s)  => Ok(s)
                 Err(_) => Err(TlsError.Internal("invalid utf-8 in stream"))
             }
@@ -263,7 +261,7 @@ export fn TlsStream @alpn_negotiated() -> Option[str] {
     if n <= 0 { return None }
     ro m = if n > 64 { 64 } else { n }
     ro bytes []u8 = buf[0..m]
-    match bytes.decode_utf8() {
+    match bytes.to_str() {
         Ok(s)  => Some(s)
         Err(_) => None
     }
@@ -283,7 +281,7 @@ export fn TlsStream @cipher_suite() -> str {
     if n <= 0 { return "" }
     ro m = if n > 128 { 128 } else { n }
     ro bytes []u8 = buf[0..m]
-    bytes.decode_utf8() ?? ""
+    bytes.to_str() ?? ""
 }
 
 /// DER сертификата peer'а с индексом `i` (0 = leaf); `None` — нет такого.
