@@ -104,10 +104,9 @@ fn fill_from_tcp(mut tcp TcpStream, session CTlsHandle) Net -> Result[bool, TlsE
         // итог сознательно не разбираем: ни успех, ни причина сбоя не меняют
         // дальнейшее — исходная ошибка `e` уже зафиксирована и будет возвращена.
         // Именованный discard-биндинг (не swallow-match `Err(_) => ()`,
-        // nv-coding-style §4); `.ok()` не используем — на `Result[(), E]`
-        // (unit-ok) выводится тип Option[E] вместо Option[()], CC-FAIL,
-        // [M-result-ok-unit-inference-mismatch] (см. backlog).
-        ro _sent = flush_out(tcp, session)
+        // nv-coding-style §4); `.ok()` — genuine-absence (D85) поверх
+        // best-effort Result-вызова.
+        ro _sent = flush_out(tcp, session).ok()
         return Err(e)
     }
     Ok(true)
@@ -309,9 +308,8 @@ export fn TlsStream consume @close() Net {
     // best-effort: peer мог уже уйти, итог сознательно не разбираем (см.
     // докстрок функции — ошибка отправки alert'а при закрытии неактуальна).
     // Именованный discard-биндинг, не swallow-match (nv-coding-style §4);
-    // `.ok()` не применяем — на unit-ok `Result[(), E]` CC-FAIL, см.
-    // [M-result-ok-unit-inference-mismatch] в backlog.
-    ro _sent = flush_out(@tcp, @session)
+    // `.ok()` — genuine-absence (D85) поверх best-effort Result-вызова.
+    ro _sent = flush_out(@tcp, @session).ok()
     @tcp.close()
     tls_free(@session)
 }
