@@ -24,7 +24,7 @@ test "T5-Required: клиент предъявляет валидный серт
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                     .client_cert(ClientCertMode.Required(client_ca()))
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
@@ -53,7 +53,7 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                     .client_cert(ClientCertMode.Required(client_ca()))
                 // Клиент не шлёт серт → сервер шлёт certificate_required alert → Err.
@@ -76,7 +76,7 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                 match TlsStream.connect(conn, ccfg) {
                     Ok(s)  => {
-                        consume st = s
+                        mut st = s
                         match st.read_to_vec(64) { Ok(_) => {} Err(_) => {} }
                         st.close()
                     }
@@ -96,7 +96,7 @@ test "T5-Optional: клиент С сертом принят" {
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                     .client_cert(ClientCertMode.Optional(client_ca()))
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
@@ -125,7 +125,7 @@ test "T5-Optional: клиент БЕЗ серта тоже принят (auth о
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                     .client_cert(ClientCertMode.Optional(client_ca()))
                 consume tls = must_tls(TlsStream.accept(conn, scfg))

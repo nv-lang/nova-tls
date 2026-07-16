@@ -28,7 +28,7 @@ test "T4-Pinned: правильный SPKI-пин — рукопожатие п�
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 tls.close()
@@ -56,7 +56,7 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
                     Ok(s)  => { s.close() assert(false) }
@@ -94,7 +94,7 @@ test "T4-Pinned: пиннинг заменяет hostname-проверку — �
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 tls.close()
@@ -125,7 +125,7 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
                     Ok(s)  => { s.close() assert(false) }
@@ -165,7 +165,7 @@ test "T4-ALPN: пересечение выбирает общий протоко
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 // Сервер поддерживает только http/1.1.
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
@@ -197,7 +197,7 @@ test "T4-ALPN-NEG: непересекающиеся списки → handshake f
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 // Сервер шлёт no_application_protocol alert → accept тоже Err.
                 match TlsStream.accept(conn, scfg) {
