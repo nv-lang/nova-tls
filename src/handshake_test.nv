@@ -43,7 +43,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
                 // ниже не снимал бы его обязательство).
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 // D133: panic-арм не снимает consume-обязательство → ошибки
@@ -109,7 +109,7 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
                 ch_port.tx.send(lst.local_port())
                 ro accepted = lst.accept()
                 lst.close()
-                consume conn = accepted!!
+                mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 // Клиент отвергнет наш серт (bad_certificate alert) → Err;
                 // точный вариант зависит от тайминга alert vs reset — важно,
