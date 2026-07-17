@@ -13,8 +13,9 @@
 // `_slow` suffix — a `_slow.nv` peer of `module tls` ran on every plain
 // `nova test`, defeating the slow-lane for folder-modules even though the
 // discovery walker (`walk_nv_filtered_ex`) already excluded it correctly.
-// FIXED: nova repo commit 252d81872 (branch `p-fix-d376-peer-slow`, pending
-// integrator merge to `main`) — [M-d376-slow-suffix-folder-module-peer-merge].
+// FIXED: nova repo commits 252d81872 + 8b431372e (branch
+// `p-fix-d376-peer-slow`, pending integrator merge to `main`) —
+// [M-d376-slow-suffix-folder-module-peer-merge].
 // The workaround is lifted: this file is a co-equal `module tls` peer again,
 // like every other test in this package, and shares `handshake_test.nv`'s
 // `fixture_cert`/`fixture_key` helpers directly (same folder-CU, no import
