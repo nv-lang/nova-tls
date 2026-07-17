@@ -127,7 +127,3 @@ extern "C" fn tls_peer_cert_der(h CTlsHandle, i int, out *mut u8, cap int) -> in
 extern "C" fn tls_last_error_kind(h CTlsHandle) -> int
 // Текст последней ошибки.
 extern "C" fn tls_last_error(h CTlsHandle, out *mut u8, cap int) -> int
-
-// ─── TEMP diagnostic ([M-187-sustained-live-tls-resource-death] investigation,
-// worktree nova-tls-leak) — alive-session counter. REMOVE before final commit.
-extern "C" fn tls_debug_alive_sessions() -> int
