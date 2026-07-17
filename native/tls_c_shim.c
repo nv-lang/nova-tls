@@ -138,6 +138,15 @@ typedef struct NovaTlsSession {
     char last_err[256];
 } NovaTlsSession;
 
+/* ── TEMP diagnostic counter ([M-187-sustained-live-tls-resource-death]
+ * investigation, worktree nova-tls-leak) — alive-session count, incremented
+ * on successful session construction, decremented in tls_free. Exposed via
+ * `tls_debug_alive_sessions` so a Nova-side loop can assert it returns to 0
+ * between iterations without needing OS-level process memory sampling.
+ * REMOVE before final commit of the actual fix. */
+static long g_dbg_alive_sessions = 0;
+nova_int tls_debug_alive_sessions(void) { return (nova_int)g_dbg_alive_sessions; }
+
 /* ── Small helpers ────────────────────────────────────────────────────────── */
 
 static void _tls_buf_ensure(unsigned char **buf, size_t *cap, size_t need) {
@@ -419,6 +428,7 @@ void tls_free(intptr_t h) {
     mbedtls_pk_free(&s->own_key);
     mbedtls_ctr_drbg_free(&s->ctr_drbg);
     mbedtls_entropy_free(&s->entropy);
+    g_dbg_alive_sessions--;
     if (s->alpn_storage) {
         for (size_t i = 0; s->alpn_storage[i]; i++) { free(s->alpn_storage[i]); }
         free(s->alpn_storage);
@@ -678,6 +688,7 @@ intptr_t tls_client_new(intptr_t c, const uint8_t *sni, intptr_t sni_len, intptr
     }
 
     _tls_step(s); /* eagerly produce ClientHello (matches prior rustls behavior) */
+    g_dbg_alive_sessions++;
     return (intptr_t)s;
 }
 
@@ -759,6 +770,7 @@ intptr_t tls_server_new(intptr_t c, intptr_t *out_err) {
     }
 
     _tls_step(s); /* server has nothing to send yet; will WANT_READ for ClientHello */
+    g_dbg_alive_sessions++;
     return (intptr_t)s;
 }
 
@@ -815,6 +827,12 @@ nova_int tls_process(intptr_t h) {
     if (!s) { return TLS_ERR_BADARG; }
     if (!mbedtls_ssl_is_handshake_over(&s->ssl)) { return _tls_step(s); }
     return TLS_ERR_OK; /* app-data decrypt happens lazily inside tls_read_plain */
+}
+
+nova_int tls_pending_out_len(intptr_t h) {
+    NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
+    if (!s) { return 0; }
+    return (nova_int)s->out_len;
 }
 
 nova_int tls_write_tls(intptr_t h, uint8_t *out, nova_int cap) {
@@ -982,6 +1000,7 @@ nova_int tls_read_tls(intptr_t h, const uint8_t *p, nova_int len) {
     (void)h; (void)p; (void)len; return TLS_ERR_UNSUPPORTED;
 }
 nova_int tls_process(intptr_t h) { (void)h; return TLS_ERR_UNSUPPORTED; }
+nova_int tls_pending_out_len(intptr_t h) { (void)h; return 0; }
 nova_int tls_write_tls(intptr_t h, uint8_t *out, nova_int cap) {
     (void)h; (void)out; (void)cap; return TLS_ERR_UNSUPPORTED;
 }
