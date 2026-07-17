@@ -817,6 +817,12 @@ nova_int tls_process(intptr_t h) {
     return TLS_ERR_OK; /* app-data decrypt happens lazily inside tls_read_plain */
 }
 
+nova_int tls_pending_out_len(intptr_t h) {
+    NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
+    if (!s) { return 0; }
+    return (nova_int)s->out_len;
+}
+
 nova_int tls_write_tls(intptr_t h, uint8_t *out, nova_int cap) {
     NovaTlsSession *s = (NovaTlsSession *)(intptr_t)h;
     if (!s) { return TLS_ERR_BADARG; }
@@ -982,6 +988,7 @@ nova_int tls_read_tls(intptr_t h, const uint8_t *p, nova_int len) {
     (void)h; (void)p; (void)len; return TLS_ERR_UNSUPPORTED;
 }
 nova_int tls_process(intptr_t h) { (void)h; return TLS_ERR_UNSUPPORTED; }
+nova_int tls_pending_out_len(intptr_t h) { (void)h; return 0; }
 nova_int tls_write_tls(intptr_t h, uint8_t *out, nova_int cap) {
     (void)h; (void)out; (void)cap; return TLS_ERR_UNSUPPORTED;
 }

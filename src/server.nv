@@ -68,9 +68,12 @@ export fn TlsStream.accept(consume stream TcpStream, config ServerConfig) Net ->
         if (session as int) == 0 {
             return Err(TlsError.from_shim(err, "server session"))
         }
+        // Переиспользуемый ciphertext-скретч — см. client.nv/stream.nv banner
+        // ([M-187-sustained-live-tls-resource-death] фикс).
+        mut scratch []u8 = []u8.new()
         // См. client.nv: pump по view-borrow; wrap — прямо в return.
-        match pump_handshake(stream, session) {
-            Ok(_)  => { return Ok(TlsStream.new(stream, session)) }  // дизарм: stream → new
+        match pump_handshake(stream, session, scratch) {
+            Ok(_)  => { return Ok(TlsStream.new(stream, session, scratch)) }  // дизарм: stream → new
             Err(e) => {
                 tls_free(session)
                 return Err(e)                  // cleanup закрывает stream

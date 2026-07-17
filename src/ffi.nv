@@ -95,6 +95,13 @@ extern "C" fn tls_read_tls(h CTlsHandle, p *u8, len int) -> int
 extern "C" fn tls_process(h CTlsHandle) -> int
 // Извлечь исходящий ciphertext (flights/данные/alerts); n записанных, 0 = нечего.
 extern "C" fn tls_write_tls(h CTlsHandle, out *mut u8, cap int) -> int
+// Сколько байт ciphertext СЕЙЧАС стоит в очереди на отправку (0 = нечего) —
+// чистый компьют, без копирования/аллокации; используется вызывающим
+// (stream.nv `flush_out`), чтобы аллоцировать ровно под фактический размер
+// вместо слепого TLS_CHUNK на каждый вызов ([M-187-sustained-live-tls-
+// resource-death] фикс: flush_out звался очень часто с пустой очередью —
+// вызывающий каждый раз аллоцировал/зануливал полный TLS_CHUNK впустую).
+extern "C" fn tls_pending_out_len(h CTlsHandle) -> int
 // Прочитать plaintext: n>0 байты; 0 = пока нет (нужен ещё feed);
 // -1 = чистый close_notify (TLS-EOF); < -1 = ошибка (обрыв без close_notify
 // = TLS_ERR_PEER_MISBEHAVED — truncation-защита, D-блок A).

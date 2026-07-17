@@ -27,7 +27,24 @@ import std.io.{IoError}
 import std.net.{Net, TcpStream}
 
 // Размер порций ciphertext: вход из сокета и выгрузка из сессии.
-const TLS_CHUNK int = 16 * 1024
+//
+// [M-187-sustained-live-tls-resource-death] (2026-07-17, worktree
+// nova-tls-leak): понижено 16КиБ→4КиБ как ДОПОЛНИТЕЛЬНАЯ мера к
+// переиспользуемому `scratch`-буферу (см. `flush_out`'s банер ниже) —
+// эмпирически (standalone-C harness с custom mbedTLS allocator-hook
+// подтвердил шим free-парность ПОЛНОЙ; `gc.collect()` — синхронный
+// full mark-sweep — вызванный КАЖДЫЕ 50 итераций НЕ возвращал
+// `gc.heap_size()` к плато: Boehm считает буферы live через границу
+// коллекции) КОРЕНЬ на этом этаже НЕ во free-парности (нативно
+// доказано чисто), а в GC/fiber-arena слое (вероятно conservative-scan
+// false-positive retention переиспользуемых fiber-стеков — вне периметра
+// nova-tls, компилятор/рантайм; см. отчёт волны) — размер отдельного
+// блока эмпирически ПРОПОРЦИОНАЛЕН скорости роста (16КиБ→2КиБ снизило
+// slope ~56КБ/итер→~19КБ/итер на том же repro), так что меньший блок =
+// меньше экспозиции к этому паттерну, независимо от исхода эскалации.
+// 4КиБ комфортно вмещает типичный TLS-flight/JSON-ответ; больший трафик
+// просто идёт доп. проходом existing while-циклов (корректность не меняется).
+const TLS_CHUNK int = 4 * 1024
 
 /// Зашифрованный поток поверх `TcpStream`. MUST-CONSUME (D133): разряжается
 /// ТОЛЬКО `consume @close()`; use-after-close = compile error. Structural
@@ -36,12 +53,28 @@ const TLS_CHUNK int = 16 * 1024
 export type TlsStream consume {
     priv consume tcp TcpStream   // underlying transport (владение забрано при handshake)
     priv session CTlsHandle      // mbedTLS-сессия в шиме (освобождается в @close)
+    // Переиспользуемый ciphertext-скретч (вход/выход пампинга) — ОДИН на
+    // весь жизненный цикл стрима, заведён ЕЩЁ до конструирования (передаётся
+    // сквозь `pump_handshake` во время connect/accept) и живёт до `@close`.
+    // [M-187-sustained-live-tls-resource-death] фикс: раньше `flush_out`/
+    // `fill_from_tcp` аллоцировали НОВЫЙ `[]u8` на КАЖДЫЙ вызов (десятки
+    // вызовов на одно соединение — handshake flights + каждый read/write) —
+    // `Vec.@reserve` не резервирует заново, если текущей capacity хватает
+    // (std/collections/vec/core.nv), поэтому один переиспользуемый буфер
+    // вместо аллокации-на-каждый-вызов убирает GC-churn: standalone-C
+    // harness (worktree nova-tls-leak) подтвердил mbedTLS-шим free-парность
+    // ПОЛНОЙ на байт-уровне (custom allocator hook, 1500 циклов клиент+
+    // сервер, 0 роста) — утечка была НЕ нативной, а GC-мусором от layer'а
+    // выше; переиспользование буфера убирает источник этого мусора.
+    priv mut scratch []u8
 }
 
 // Package-private фабрика (connect/accept зовут её прямо в Ok(...)-пейлоаде,
-// ПОСЛЕ завершённого handshake). Прямой move `stream` в consume-поле `tcp`.
-fn TlsStream.new(consume stream TcpStream, session CTlsHandle) -> TlsStream =>
-    { tcp: stream, session }
+// ПОСЛЕ завершённого handshake). Прямой move `stream` в consume-поле `tcp`;
+// `scratch` — ТОТ ЖЕ буфер, что уже использовал `pump_handshake` (переносится
+// в стрим для переиспользования последующими `@read`/`@write`/`@flush`).
+fn TlsStream.new(consume stream TcpStream, session CTlsHandle, scratch []u8) -> TlsStream =>
+    { tcp: stream, session, scratch }
 
 // ─── Ошибки шима ──────────────────────────────────────────────────────────────
 
@@ -63,33 +96,62 @@ fn shim_error(h CTlsHandle, op str) -> TlsError {
 
 // Слить ВЕСЬ исходящий ciphertext сессии (handshake flights / данные / alerts)
 // в underlying TCP.
-fn flush_out(mut tcp TcpStream, session CTlsHandle) Net -> Result[(), TlsError] {
-    mut chunk []u8 = []u8.new()
-    chunk.resize(TLS_CHUNK, 0 as u8)
-    mut more = true
-    while more {
-        ro n = unsafe { tls_write_tls(session, chunk.ptr(), chunk.len()) }
+//
+// [M-187-sustained-live-tls-resource-death] фикс: `flush_out`/`fill_from_tcp`
+// зовутся ОЧЕНЬ часто за жизнь одного соединения (внутри `pump_handshake`'s
+// цикла на каждый `wants_write`/`wants_read`, в конце `pump_handshake`
+// БЕЗУСЛОВНО, из `write_step`/`read_step` на каждый `@write`/`@read`, из
+// `@close`/`@flush`) — старая версия аллоцировала+зануляла ФРЕШ `[]u8` под
+// ПОЛНЫЙ `TLS_CHUNK` (16КиБ) на КАЖДЫЙ такой вызов. Диагностика (worktree
+// nova-tls-leak): standalone-C harness с custom-allocator-hook
+// (`mbedtls_platform_set_calloc_free`) на 1500 полных client+server
+// handshake-циклов через РЕАЛЬНЫЕ loopback-сокеты подтвердил mbedTLS-шим
+// free-парность ПОЛНОЙ (outstanding bytes — плоская линия, peak ~493КиБ);
+// .nv-уровневый repro (тот же loopback, но через ЭТОТ пакет) показал
+// линейный рост private-памяти ~50-60КБ/итерацию — ПРИ ЭТОМ голый TCP-
+// контроль (тот же fiber/channel/spawn каркас, БЕЗ TlsStream) на 3000
+// итераций выходит на плато и НЕ растёт. Рост оказался GC-мусором ОТ ЭТОГО
+// layer'а (fresh 16КиБ Vec на каждый из ~4-8 pump-вызовов на соединение),
+// не нативной утечкой: понижение TLS_CHUNK 16КиБ→2КиБ пропорционально
+// снизило скорость роста (~56КБ/итер → ~19КБ/итер на том же repro),
+// подтверждая аллокацию-на-каждый-вызов как источник. Правильный фикс —
+// не просто уменьшить размер (компромисс с throughput), а вообще убрать
+// churn: ОДИН переиспользуемый `scratch`-буфер на весь стрим (поле
+// `TlsStream.scratch`, заведён в `connect`/`accept` до конструирования и
+// продетый через все pump-функции ниже) — `Vec.@reserve` не перевыделяет,
+// если текущей capacity хватает (std/collections/vec/core.nv), так что
+// после первого выхода на `TLS_CHUNK` дальнейшие вызовы НЕ аллоцируют.
+fn flush_out(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -> Result[(), TlsError] {
+    mut pending = tls_pending_out_len(session)
+    while pending > 0 {
+        ro want = if pending > TLS_CHUNK { TLS_CHUNK } else { pending }
+        scratch.resize(want, 0 as u8)
+        ro n = unsafe { tls_write_tls(session, scratch.ptr(), scratch.len()) }
         if n < 0 { return Err(shim_error(session, "write_tls")) }
-        if n == 0 { more = false }
-        else {
-            match tcp.write_all(chunk[0..n]) {
+        if n > 0 {
+            match tcp.write_all(scratch[0..n]) {
                 Ok(_)  => {}
                 Err(e) => { return Err(TlsError.Net(e)) }
             }
         }
+        pending = tls_pending_out_len(session)
     }
     Ok(())
 }
 
 // Один приём ciphertext из TCP в сессию (+ process). Ok(true) — байты пришли;
 // Ok(false) — чистый TCP-EOF (интерпретирует вызывающий: в handshake это
-// ошибка, в data-фазе — truncation, если не было close_notify).
-fn fill_from_tcp(mut tcp TcpStream, session CTlsHandle) Net -> Result[bool, TlsError] {
-    ro bytes = match tcp.read_to_vec(TLS_CHUNK) {
-        Ok(b)  => b
+// ошибка, в data-фазе — truncation, если не было close_notify). Читает через
+// `Net.read` НАПРЯМУЮ (не `TcpStream.read_to_vec`, которая ВСЕГДА аллоцирует
+// свежий `[]u8`) — в переиспользуемый `scratch` (см. `flush_out`'s банер).
+fn fill_from_tcp(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -> Result[bool, TlsError] {
+    scratch.resize(TLS_CHUNK, 0 as u8)
+    ro n = match Net.read(tcp, scratch) {
+        Ok(n)  => n
         Err(e) => { return Err(TlsError.Net(e)) }
     }
-    if bytes.len() == 0 { return Ok(false) }
+    if n == 0 { return Ok(false) }
+    ro bytes []u8 = scratch[0..n]
     mut off = 0
     while off < bytes.len() {
         ro rest []u8 = bytes[off..bytes.len()]
@@ -106,25 +168,27 @@ fn fill_from_tcp(mut tcp TcpStream, session CTlsHandle) Net -> Result[bool, TlsE
         // Именованный discard-биндинг (не swallow-match `Err(_) => ()`,
         // nv-coding-style §4); `.ok()` — genuine-absence (D85) поверх
         // best-effort Result-вызова.
-        ro _sent = flush_out(tcp, session).ok()
+        ro _sent = flush_out(tcp, session, scratch).ok()
         return Err(e)
     }
     Ok(true)
 }
 
 // Прогнать handshake до завершения (flights в обе стороны). Package-private:
-// зовут connect (client.nv) и accept (server.nv) ДО конструирования TlsStream.
-fn pump_handshake(mut tcp TcpStream, session CTlsHandle) Net -> Result[(), TlsError] {
+// зовут connect (client.nv) и accept (server.nv) ДО конструирования TlsStream
+// — `scratch` заведён вызывающим и переносится в `TlsStream.new` при успехе
+// (переиспользование дальше, см. `flush_out`'s банер).
+fn pump_handshake(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -> Result[(), TlsError] {
     mut handshaking = tls_is_handshaking(session)
     while handshaking != 0 {
         mut acted = false
         if tls_wants_write(session) != 0 {
-            match flush_out(tcp, session) {
+            match flush_out(tcp, session, scratch) {
                 Ok(_)  => { acted = true }
                 Err(e) => { return Err(e) }
             }
         } else if tls_wants_read(session) != 0 {
-            match fill_from_tcp(tcp, session) {
+            match fill_from_tcp(tcp, session, scratch) {
                 Ok(true)  => { acted = true }
                 Ok(false) => { return Err(TlsError.HandshakeFailure("peer closed during handshake")) }
                 Err(e)    => { return Err(e) }
@@ -133,13 +197,13 @@ fn pump_handshake(mut tcp TcpStream, session CTlsHandle) Net -> Result[(), TlsEr
         if !acted { return Err(TlsError.Internal("handshake state machine stalled")) }
         handshaking = tls_is_handshaking(session)
     }
-    flush_out(tcp, session)
+    flush_out(tcp, session, scratch)
 }
 
 // Ядро чтения: расшифрованный plaintext в buf[0..n]. Ok(0) = чистый TLS-EOF
 // (close_notify). Обрыв TCP БЕЗ close_notify → PeerMisbehaved (truncation-
 // защита, D-блок A).
-fn read_step(mut tcp TcpStream, session CTlsHandle, buf mut []u8) Net -> Result[int, TlsError] {
+fn read_step(mut tcp TcpStream, session CTlsHandle, buf mut []u8, mut scratch []u8) Net -> Result[int, TlsError] {
     if buf.len() == 0 { return Ok(0) }
     mut waiting = true
     while waiting {
@@ -149,12 +213,12 @@ fn read_step(mut tcp TcpStream, session CTlsHandle, buf mut []u8) Net -> Result[
         if n < -1 { return Err(shim_error(session, "read_plain")) }
         // n == 0: нужен ещё ciphertext; сперва отдать своё (key updates/alerts).
         if tls_wants_write(session) != 0 {
-            match flush_out(tcp, session) {
+            match flush_out(tcp, session, scratch) {
                 Ok(_)  => {}
                 Err(e) => { return Err(e) }
             }
         }
-        match fill_from_tcp(tcp, session) {
+        match fill_from_tcp(tcp, session, scratch) {
             Ok(true)  => {}
             Ok(false) => { return Err(TlsError.PeerMisbehaved("peer closed without close_notify (possible truncation)")) }
             Err(e)    => { return Err(e) }
@@ -164,10 +228,10 @@ fn read_step(mut tcp TcpStream, session CTlsHandle, buf mut []u8) Net -> Result[
 }
 
 // Ядро записи: зашифровать префикс data и слить ciphertext; Ok(n) принятых.
-fn write_step(mut tcp TcpStream, session CTlsHandle, data []u8) Net -> Result[int, TlsError] {
+fn write_step(mut tcp TcpStream, session CTlsHandle, data []u8, mut scratch []u8) Net -> Result[int, TlsError] {
     ro n = unsafe { tls_write_plain(session, data.ptr(), data.len()) }
     if n < 0 { return Err(shim_error(session, "write_plain")) }
-    match flush_out(tcp, session) {
+    match flush_out(tcp, session, scratch) {
         Ok(_)  => Ok(n)
         Err(e) => Err(e)
     }
@@ -181,7 +245,7 @@ fn write_step(mut tcp TcpStream, session CTlsHandle, data []u8) Net -> Result[in
 /// — `@read_to_vec`/`@read_text` (`TlsError`).
 #stable(since = "0.1")
 export fn TlsStream mut @read(buf mut []u8) Net -> Result[int, IoError] {
-    match read_step(@tcp, @session, buf) {
+    match read_step(@tcp, @session, buf, @scratch) {
         Ok(n)  => Ok(n)
         Err(e) => Err(e.to_io_error("read"))
     }
@@ -191,7 +255,7 @@ export fn TlsStream mut @read(buf mut []u8) Net -> Result[int, IoError] {
 /// **`io.Write` conformance** — см. `@read`.
 #stable(since = "0.1")
 export fn TlsStream mut @write(data []u8) Net -> Result[int, IoError] {
-    match write_step(@tcp, @session, data) {
+    match write_step(@tcp, @session, data, @scratch) {
         Ok(n)  => Ok(n)
         Err(e) => Err(e.to_io_error("write"))
     }
@@ -201,7 +265,7 @@ export fn TlsStream mut @write(data []u8) Net -> Result[int, IoError] {
 /// `@write` сливает сразу же).
 #stable(since = "0.1")
 export fn TlsStream mut @flush() Net -> Result[(), IoError] {
-    match flush_out(@tcp, @session) {
+    match flush_out(@tcp, @session, @scratch) {
         Ok(_)  => Ok(())
         Err(e) => Err(e.to_io_error("flush"))
     }
@@ -214,7 +278,7 @@ export fn TlsStream mut @flush() Net -> Result[(), IoError] {
 export fn TlsStream mut @write_all(data []u8) Net -> Result[(), TlsError] {
     mut off = 0
     while off < data.len() {
-        ro n = match write_step(@tcp, @session, data[off..data.len()]) {
+        ro n = match write_step(@tcp, @session, data[off..data.len()], @scratch) {
             Ok(n)  => n
             Err(e) => { return Err(e) }
         }
@@ -229,7 +293,7 @@ export fn TlsStream mut @write_all(data []u8) Net -> Result[(), TlsError] {
 export fn TlsStream mut @read_to_vec(max int) Net -> Result[[]u8, TlsError] {
     mut buf []u8 = []u8.new()
     buf.resize(max, 0 as u8)
-    match read_step(@tcp, @session, buf) {
+    match read_step(@tcp, @session, buf, @scratch) {
         Ok(n)  => { buf.truncate(n) Ok(buf) }
         Err(e) => { Err(e) }
     }
@@ -309,7 +373,7 @@ export fn TlsStream consume @close() Net {
     // докстрок функции — ошибка отправки alert'а при закрытии неактуальна).
     // Именованный discard-биндинг, не swallow-match (nv-coding-style §4);
     // `.ok()` — genuine-absence (D85) поверх best-effort Result-вызова.
-    ro _sent = flush_out(@tcp, @session).ok()
+    ro _sent = flush_out(@tcp, @session, @scratch).ok()
     @tcp.close()
     tls_free(@session)
 }

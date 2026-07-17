@@ -95,10 +95,16 @@ export fn TlsStream.connect(consume stream TcpStream, config ClientConfig) Net -
         if (session as int) == 0 {
             return Err(TlsError.from_shim(err, "client session"))
         }
+        // Переиспользуемый ciphertext-скретч ([M-187-sustained-live-tls-
+        // resource-death] фикс, stream.nv banner) — заведён ЗДЕСЬ (единственная
+        // аллокация на всё соединение до steady-state capacity), продет через
+        // pump_handshake, и переносится в TlsStream на успехе для дальнейшего
+        // переиспользования @read/@write/@flush/@close.
+        mut scratch []u8 = []u8.new()
         // stream уходит в pump view-borrow'ом (mut-параметр не потребляет);
         // TlsStream строится ТОЛЬКО после успешного handshake (D131/D133).
-        match pump_handshake(stream, session) {
-            Ok(_)  => { return Ok(TlsStream.new(stream, session)) }  // дизарм: stream → new
+        match pump_handshake(stream, session, scratch) {
+            Ok(_)  => { return Ok(TlsStream.new(stream, session, scratch)) }  // дизарм: stream → new
             Err(e) => {
                 tls_free(session)
                 return Err(e)                  // cleanup закрывает stream
