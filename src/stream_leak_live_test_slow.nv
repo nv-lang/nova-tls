@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// nova-tls: src/slow/stream_leak_live_test_slow.nv — SLOW regression test
-// for [M-187-sustained-live-tls-resource-death] (nova repo
+// nova-tls: src/stream_leak_live_test_slow.nv — SLOW regression test for
+// [M-187-sustained-live-tls-resource-death] (nova repo
 // docs/simplifications.md; D376 slow-lane suffix — default `nova test`
-// SKIPS this file; run via `--include-slow` / `--slow-only`). Lives in
-// `src/slow/` (own `module slow.*`), NOT directly beside `stream.nv` —
-// see the peer file `stream_leak_test_slow.nv`'s banner for why (confirmed
-// compiler gap: `_slow.nv` is not respected for folder-module test peers,
-// `nova test`'s peer-merge in compiler-codegen/src/imports.rs is unaware of
-// the suffix). That peer file is the DETERMINISTIC loopback signal; THIS
-// file is the "as in production" variant requested by the owner: real
-// internet TLS hosts, real `SystemRoots` verification (the
-// actual `ClientConfig.new(host)` default the flagship aggregator uses
-// against `api.open-meteo.com`), real per-connection handshake pump churn —
-// but spread across a POOL of well-known, always-up, non-API domains so no
-// single host sees more than `LEAK_LIVE_CONNS_PER_HOST` connections per run
-// (politeness) and NO quota-bearing API (open-meteo etc.) is touched at all.
+// SKIPS this file; run via `--include-slow` / `--slow-only`). Lives
+// directly beside the module (module-tests-beside-module convention),
+// like every other test in this package — it did NOT used to: it lived in
+// a separate `src/slow/` directory (own `module slow.*`) as a workaround
+// for a confirmed compiler bug (peer-merge of a folder-module ignored the
+// D376 `_slow` suffix — see the peer file `stream_leak_test_slow.nv`'s
+// banner for the full diagnosis). FIXED: nova repo commits 252d81872 +
+// 8b431372e (branch `p-fix-d376-peer-slow`, pending integrator merge to
+// `main`) — [M-d376-slow-suffix-folder-module-peer-merge]. The workaround
+// is lifted.
+//
+// That peer file is the DETERMINISTIC loopback signal; THIS file is the
+// "as in production" variant requested by the owner: real internet TLS
+// hosts, real `SystemRoots` verification (the actual `ClientConfig.new(host)`
+// default the flagship aggregator uses against `api.open-meteo.com`), real
+// per-connection handshake pump churn — but spread across a POOL of
+// well-known, always-up, non-API domains so no single host sees more than
+// `LEAK_LIVE_CONNS_PER_HOST` connections per run (politeness) and NO
+// quota-bearing API (open-meteo etc.) is touched at all.
 //
 // Network-flaky-safe by design (D89/test-conventions honesty: "network
 // unavailable" must never read as "leak found"): each connection attempt is
@@ -39,11 +45,10 @@
 // the loopback test's PRE-FIX rate (64094 bytes/iter) — a live-host slope
 // anywhere near that old rate would still fail this test.
 
-module slow.stream_leak_live_test_slow
+module tls
 
 import std.net.{Net, TcpStream, resolve, real_net}
 import std.runtime.gc
-import tls.{TlsStream, ClientConfig}
 
 /// Real, well-known, always-up TLS hosts (port 443) — NOT open-meteo or any
 /// quota-bearing API; ordinary web domains chosen for reachability + low

@@ -1,32 +1,25 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// nova-tls: src/slow/stream_leak_test_slow.nv — SLOW regression test for
+// nova-tls: src/stream_leak_test_slow.nv — SLOW regression test for
 // [M-187-sustained-live-tls-resource-death] (nova repo docs/simplifications.md;
 // D376 slow-lane suffix — default `nova test` SKIPS this file; run via
 // `--include-slow` / `--slow-only`).
 //
-// WHY `src/slow/`, not directly beside stream.nv (module-tests-beside-module
-// convention, otherwise honored throughout this package): confirmed compiler
-// gap — for a folder-module (this package's `src/`, many peer files all
-// declaring `module tls`), `nova test`'s slow-lane exclusion correctly drops
-// `_slow.nv` files from the DISCOVERY walk (`walk_nv_filtered_ex`,
-// compiler-codegen/src/test_runner.rs), but the SEPARATE peer-file merge used
-// during actual compilation (`resolve_imports_inline_ex`'s peer scan,
-// compiler-codegen/src/imports.rs ~3073-3110) filters only an exact `_test`
-// suffix and is unaware of `_slow` at all — it unconditionally vacuums EVERY
-// `.nv` file physically present in the SAME directory as the chosen entry
-// into the compile unit, so a `_slow.nv` peer of `module tls` runs on every
-// plain `nova test` regardless of `--include-slow` (verified empirically:
-// dropping this file directly in `src/` made it run unconditionally). Moving
-// it to a genuinely separate directory (`src/slow/`, own `module
-// slow.<name>` — required by `[E_D78_MODULE_PATH_MISMATCH]`) sidesteps the
-// bug entirely: the peer-scan is a non-recursive `read_dir` on the entry
-// file's OWN directory, so `src/slow/*.nv` is never swept into `src/`'s
-// compile unit, and IS correctly gated by `--include-slow` on its own (each
-// file here becomes its own standalone test entry). Not fixed here — that's
-// a compiler-codegen change, out of this package's scope; worth its own
-// followup marker if the owner wants it fixed generally (D376 currently
-// only works for `nova_tests/`-style standalone files and single-module
-// packages, not multi-peer folder-module test suites like this one).
+// Lives directly beside the module (module-tests-beside-module convention,
+// honored throughout this package) — it did NOT used to: it lived in a
+// separate `src/slow/` directory (own `module slow.*`) as a workaround for a
+// confirmed compiler bug where a folder-module's peer-merge
+// (`resolve_imports_inline_ex`'s peer scan, compiler-codegen/src/imports.rs)
+// vacuumed every `.nv` file in the entry's directory regardless of the D376
+// `_slow` suffix — a `_slow.nv` peer of `module tls` ran on every plain
+// `nova test`, defeating the slow-lane for folder-modules even though the
+// discovery walker (`walk_nv_filtered_ex`) already excluded it correctly.
+// FIXED: nova repo commits 252d81872 + 8b431372e (branch
+// `p-fix-d376-peer-slow`, pending integrator merge to `main`) —
+// [M-d376-slow-suffix-folder-module-peer-merge].
+// The workaround is lifted: this file is a co-equal `module tls` peer again,
+// like every other test in this package, and shares `handshake_test.nv`'s
+// `fixture_cert`/`fixture_key` helpers directly (same folder-CU, no import
+// needed) instead of re-embedding its own copy.
 //
 // DETERMINISTIC loopback variant: client+server TLS round-trip in ONE process
 // (self-signed fixture cert, `CustomRoots` verification — same shape as
@@ -71,18 +64,10 @@
 // `[M-boehm-large-buffer-retention-fiber-reuse]` residual means the post-fix
 // slope is NOT zero — this test asserts "fixed", not "perfect").
 
-module slow.stream_leak_test_slow
+module tls
 
 import std.net.{Net, TcpListener, TcpStream, SocketAddr, real_net}
 import std.runtime.gc
-import tls.{TlsStream, ClientConfig, ServerConfig, VerificationMode}
-
-// Own copy of the fixture cert/key (handshake_test.nv's `fixture_cert`/
-// `fixture_key` are module-private to `tls` — this file is its own
-// standalone module, `src/slow/` sitting outside the `tls` folder-module's
-// peer-scan on purpose, see banner above).
-fn fixture_cert() -> []u8 => embed("../testdata/localhost_cert.pem")
-fn fixture_key() -> []u8 => embed("../testdata/localhost_key.pem")
 
 const LEAK_ITERATIONS int = 1500
 const LEAK_WARMUP int = 200
