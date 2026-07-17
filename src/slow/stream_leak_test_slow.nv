@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// nova-tls: src/slow/stream_leak_test_slow.nv — SLOW regression test for
+// [M-187-sustained-live-tls-resource-death] (nova repo docs/simplifications.md;
+// D376 slow-lane suffix — default `nova test` SKIPS this file; run via
+// `--include-slow` / `--slow-only`).
+//
+// WHY `src/slow/`, not directly beside stream.nv (module-tests-beside-module
+// convention, otherwise honored throughout this package): confirmed compiler
+// gap — for a folder-module (this package's `src/`, many peer files all
+// declaring `module tls`), `nova test`'s slow-lane exclusion correctly drops
+// `_slow.nv` files from the DISCOVERY walk (`walk_nv_filtered_ex`,
+// compiler-codegen/src/test_runner.rs), but the SEPARATE peer-file merge used
+// during actual compilation (`resolve_imports_inline_ex`'s peer scan,
+// compiler-codegen/src/imports.rs ~3073-3110) filters only an exact `_test`
+// suffix and is unaware of `_slow` at all — it unconditionally vacuums EVERY
+// `.nv` file physically present in the SAME directory as the chosen entry
+// into the compile unit, so a `_slow.nv` peer of `module tls` runs on every
+// plain `nova test` regardless of `--include-slow` (verified empirically:
+// dropping this file directly in `src/` made it run unconditionally). Moving
+// it to a genuinely separate directory (`src/slow/`, own `module
+// slow.<name>` — required by `[E_D78_MODULE_PATH_MISMATCH]`) sidesteps the
+// bug entirely: the peer-scan is a non-recursive `read_dir` on the entry
+// file's OWN directory, so `src/slow/*.nv` is never swept into `src/`'s
+// compile unit, and IS correctly gated by `--include-slow` on its own (each
+// file here becomes its own standalone test entry). Not fixed here — that's
+// a compiler-codegen change, out of this package's scope; worth its own
+// followup marker if the owner wants it fixed generally (D376 currently
+// only works for `nova_tests/`-style standalone files and single-module
+// packages, not multi-peer folder-module test suites like this one).
+//
+// DETERMINISTIC loopback variant: client+server TLS round-trip in ONE process
+// (self-signed fixture cert, `CustomRoots` verification — same shape as
+// handshake_test.nv's smoke test), looped many times, GC-heap growth slope
+// asserted via `std.runtime.gc.{heap_size, collect}`. No network/quota
+// dependency — a stable, always-runnable signal. See
+// `stream_leak_live_test_slow.nv` (peer file) for the "as in production"
+// live-internet-host variant (real SystemRoots verification against a pool
+// of real TLS hosts) requested alongside this one.
+//
+// ─── Root cause + fix (full diagnosis: nova repo docs/simplifications.md
+// `[M-187-sustained-live-tls-resource-death]`) ──────────────────────────────
+// `stream.nv`'s `flush_out`/`fill_from_tcp` used to allocate a FRESH 16KiB
+// `[]u8` on every pump call (several calls per connection: handshake flights,
+// each read/write) — native mbedTLS/shim free-parity was proven COMPLETE
+// (standalone-C harness with a custom `mbedtls_platform_set_calloc_free`
+// allocator hook: 1500 real client+server loopback handshake cycles, 0 net
+// growth) — the growth was GC-churn from this repeated large allocation,
+// which Boehm's collector did not fully reclaim under rapid per-connection
+// churn (residual, tracked separately as `[M-boehm-large-buffer-retention-
+// fiber-reuse]`, nova repo backlog — out of THIS package's remit). Fix: a
+// reusable `TlsStream.scratch` buffer threaded through the whole pump
+// lifecycle instead of a fresh Vec per call, a 0-allocation
+// `tls_pending_out_len` probe so `flush_out` skips the allocation entirely
+// when nothing is queued, and `TLS_CHUNK` 16KiB→4KiB.
+//
+// ─── Threshold calibration (this exact test, `gc.heap_size()`-based slope,
+// least-squares over samples taken every `LEAK_SAMPLE_EVERY` iterations after
+// `LEAK_WARMUP`) ─────────────────────────────────────────────────────────────
+//   - pre-fix  (nova-tls commit 4748549, HEAD before fix-tls-leak merged):
+//     slope = 64094.07 bytes/iter (measured directly with THIS exact test
+//     file dropped into a throwaway checkout of that commit, threshold
+//     temporarily raised so the assert wouldn't mask the number — RUN-FAIL
+//     against the real 35000 threshold below, confirming the test catches
+//     the regression).
+//   - post-fix (this commit, current stream.nv/client.nv/server.nv):
+//     3 stability runs: 21005.50 / 21006.63 / 20978.50 bytes/iter (< 0.15%
+//     spread — no flakiness observed) — all comfortably below the
+//     threshold below, ~40% headroom on this side.
+// `LEAK_SLOPE_THRESHOLD_BYTES` is set well below the pre-fix rate and with
+// generous headroom above the post-fix rate (the acknowledged
+// `[M-boehm-large-buffer-retention-fiber-reuse]` residual means the post-fix
+// slope is NOT zero — this test asserts "fixed", not "perfect").
+
+module slow.stream_leak_test_slow
+
+import std.net.{Net, TcpListener, TcpStream, SocketAddr, real_net}
+import std.runtime.gc
+import tls.{TlsStream, ClientConfig, ServerConfig, VerificationMode}
+
+// Own copy of the fixture cert/key (handshake_test.nv's `fixture_cert`/
+// `fixture_key` are module-private to `tls` — this file is its own
+// standalone module, `src/slow/` sitting outside the `tls` folder-module's
+// peer-scan on purpose, see banner above).
+fn fixture_cert() -> []u8 => embed("../testdata/localhost_cert.pem")
+fn fixture_key() -> []u8 => embed("../testdata/localhost_key.pem")
+
+const LEAK_ITERATIONS int = 1500
+const LEAK_WARMUP int = 200
+const LEAK_SAMPLE_EVERY int = 100
+// Midpoint-with-margin between the pre-fix (64094.07 bytes/iter) and
+// post-fix (~21000 bytes/iter) measured rates — see banner above.
+const LEAK_SLOPE_THRESHOLD_BYTES f64 = 35000.0
+
+test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-heap slope regression" {
+    with Net = real_net() {
+        mut sx f64 = 0.0
+        mut sy f64 = 0.0
+        mut sxy f64 = 0.0
+        mut sxx f64 = 0.0
+        mut n f64 = 0.0
+        for i in 0..LEAK_ITERATIONS {
+            ro ch_port = Channel.new(1)
+            supervised {
+                spawn {
+                    mut lst = match TcpListener.bind(SocketAddr.loopback(0)) {
+                        Ok(l)  => l
+                        Err(_) => panic("bind failed")
+                    }
+                    ch_port.tx.send(lst.local_port())
+                    match lst.accept() {
+                        Err(_) => {}
+                        Ok(tcp) => {
+                            ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
+                            match TlsStream.accept(tcp, scfg) {
+                                Err(_) => {}
+                                Ok(session) => {
+                                    mut stream = session
+                                    match stream.read_to_vec(64) {
+                                        Ok(_)  => { ro _wrote = stream.write_all("ok\n".bytes()) }
+                                        Err(_) => {}
+                                    }
+                                    stream.close()
+                                }
+                            }
+                        }
+                    }
+                    lst.close()
+                }
+                spawn {
+                    ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
+                    match TcpStream.connect(SocketAddr.loopback(port)) {
+                        Err(_) => {}
+                        Ok(tcp) => {
+                            ro cfg = ClientConfig.new("localhost")
+                                .verification(VerificationMode.CustomRoots(fixture_cert()))
+                            match TlsStream.connect(tcp, cfg) {
+                                Err(_) => {}
+                                Ok(session) => {
+                                    mut stream = session
+                                    ro _wrote = stream.write_all("hi\n".bytes())
+                                    ro _echo = stream.read_to_vec(64)
+                                    stream.close()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if i >= LEAK_WARMUP && (i - LEAK_WARMUP) % LEAK_SAMPLE_EVERY == 0 {
+                gc.collect()
+                ro x = i as f64
+                ro y = gc.heap_size() as f64
+                sx += x
+                sy += y
+                sxy += x * y
+                sxx += x * x
+                n += 1.0
+            }
+        }
+        ro slope = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+        println("[M-187] loopback GC-heap slope = " + slope.to_str() + " bytes/iter (threshold " +
+            LEAK_SLOPE_THRESHOLD_BYTES.to_str() + ")")
+        assert(slope < LEAK_SLOPE_THRESHOLD_BYTES)
+    }
+}
