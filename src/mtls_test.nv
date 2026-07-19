@@ -58,7 +58,7 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
                     .client_cert(ClientCertMode.Required(client_ca()))
                 // Клиент не шлёт серт → сервер шлёт certificate_required alert → Err.
                 match TlsStream.accept(conn, scfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(_) => {}
                 }
             }
@@ -75,8 +75,8 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => {
-                        mut st = s
+                    Ok(consume s)  => {
+                        consume st = s
                         match st.read_to_vec(64) { Ok(_) => {} Err(_) => {} }
                         st.close()
                     }

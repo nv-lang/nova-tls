@@ -59,7 +59,7 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
                 mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(_) => {}
                 }
             }
@@ -71,7 +71,7 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
                 ro ccfg = ClientConfig.new("localhost")
                     .verification(VerificationMode.Pinned(pins))
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(e) => {
                         assert(match e {
                             CertificateInvalid(_) => true
@@ -128,7 +128,7 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
                 mut conn = accepted!!
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                 match TlsStream.accept(conn, scfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(_) => {}
                 }
             }
@@ -140,7 +140,7 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
                 // самоподписанный серт там отсутствует.
                 ro ccfg = ClientConfig.new("localhost")
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(e) => {
                         assert(match e {
                             CertificateInvalid(_) => true
@@ -201,7 +201,7 @@ test "T4-ALPN-NEG: непересекающиеся списки → handshake f
                 ro scfg = ServerConfig.new(fixture_cert(), fixture_key()).alpn_protocols(["http/1.1"])
                 // Сервер шлёт no_application_protocol alert → accept тоже Err.
                 match TlsStream.accept(conn, scfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(_) => {}
                 }
             }
@@ -213,7 +213,7 @@ test "T4-ALPN-NEG: непересекающиеся списки → handshake f
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                     .alpn_protocols(["h2"])   // только h2, сервер только http/1.1
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => { s.close() assert(false) }
+                    Ok(consume s)  => { s.close() assert(false) }
                     Err(e) => {
                         assert(match e {
                             AlpnNoCommonProtocol => true

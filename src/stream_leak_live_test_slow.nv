@@ -91,12 +91,12 @@ fn leak_live_one(host str) Net -> bool {
             } else {
                 match TcpStream.connect(addrs[0]) {
                     Err(_) => false
-                    Ok(tcp) => {
+                    Ok(consume tcp) => {
                         ro cfg = ClientConfig.new(host)
                         match TlsStream.connect(tcp, cfg) {
                             Err(_) => false
-                            Ok(session) => {
-                                mut stream = session
+                            Ok(consume session) => {
+                                consume stream = session
                                 stream.close()
                                 true
                             }

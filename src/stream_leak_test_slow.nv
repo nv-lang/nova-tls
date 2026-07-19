@@ -88,18 +88,18 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
             supervised {
                 spawn {
                     mut lst = match TcpListener.bind(SocketAddr.loopback(0)) {
-                        Ok(l)  => l
+                        Ok(consume l)  => l
                         Err(_) => panic("bind failed")
                     }
                     ch_port.tx.send(lst.local_port())
                     match lst.accept() {
                         Err(_) => {}
-                        Ok(tcp) => {
+                        Ok(consume tcp) => {
                             ro scfg = ServerConfig.new(fixture_cert(), fixture_key())
                             match TlsStream.accept(tcp, scfg) {
                                 Err(_) => {}
-                                Ok(session) => {
-                                    mut stream = session
+                                Ok(consume session) => {
+                                    consume stream = session
                                     match stream.read_to_vec(64) {
                                         Ok(_)  => { ro _wrote = stream.write_all("ok\n".bytes()) }
                                         Err(_) => {}
@@ -115,13 +115,13 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
                     ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
                     match TcpStream.connect(SocketAddr.loopback(port)) {
                         Err(_) => {}
-                        Ok(tcp) => {
+                        Ok(consume tcp) => {
                             ro cfg = ClientConfig.new("localhost")
                                 .verification(VerificationMode.CustomRoots(fixture_cert()))
                             match TlsStream.connect(tcp, cfg) {
                                 Err(_) => {}
-                                Ok(session) => {
-                                    mut stream = session
+                                Ok(consume session) => {
+                                    consume stream = session
                                     ro _wrote = stream.write_all("hi\n".bytes())
                                     ro _echo = stream.read_to_vec(64)
                                     stream.close()

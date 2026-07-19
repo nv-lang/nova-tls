@@ -26,7 +26,7 @@ fn fixture_key() -> []u8 => embed("testdata/localhost_key.pem")
 
 fn must_tls(r Result[TlsStream, TlsError]) -> TlsStream {
     match r {
-        Ok(s)  => s
+        Ok(consume s)  => s
         Err(e) => panic("tls failed: ${e.to_str()}")
     }
 }
@@ -115,7 +115,7 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
                 // точный вариант зависит от тайминга alert vs reset — важно,
                 // что это ошибка и ресурсы прибраны (обязательства сняты).
                 match TlsStream.accept(conn, scfg) {
-                    Ok(s)  => {
+                    Ok(consume s)  => {
                         s.close()
                         assert(false)
                     }
@@ -130,7 +130,7 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
                 ro ccfg = ClientConfig.new("wrong.example")
                     .verification(VerificationMode.CustomRoots(fixture_cert()))
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => {
+                    Ok(consume s)  => {
                         s.close()
                         assert(false)
                     }
@@ -156,7 +156,7 @@ test "NEG-runtime: пустой SNI отвергается ДО сокет-тр�
                 consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro ccfg = ClientConfig.new("")
                 match TlsStream.connect(conn, ccfg) {
-                    Ok(s)  => {
+                    Ok(consume s)  => {
                         s.close()
                         assert(false)
                     }
@@ -171,7 +171,7 @@ test "NEG-runtime: пустой SNI отвергается ДО сокет-тр�
                 consume conn2 = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro scfg = ServerConfig.new("not a pem".bytes(), "not a key".bytes())
                 match TlsStream.accept(conn2, scfg) {
-                    Ok(s)  => {
+                    Ok(consume s)  => {
                         s.close()
                         assert(false)
                     }
