@@ -48,7 +48,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
                 consume tls = must_tls(TlsStream.accept(conn, scfg))
                 // D133: panic-арм не снимает consume-обязательство → ошибки
                 // сворачиваются в сентинелы, assert'ы ПОСЛЕ close.
-                ro got = match tls.read_to_vec(256) {
+                ro got = match tls.read_bytes(256) {
                     Ok(b)  => b
                     Err(_) => []u8.new()
                 }
@@ -87,7 +87,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
                     Ok(_)  => true
                     Err(_) => false
                 }
-                ro echo = match tls.read_to_vec(256) {
+                ro echo = match tls.read_bytes(256) {
                     Ok(b)  => b
                     Err(_) => []u8.new()
                 }

@@ -142,7 +142,7 @@ fn flush_out(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -> Res
 // Один приём ciphertext из TCP в сессию (+ process). Ok(true) — байты пришли;
 // Ok(false) — чистый TCP-EOF (интерпретирует вызывающий: в handshake это
 // ошибка, в data-фазе — truncation, если не было close_notify). Читает через
-// `Net.read` НАПРЯМУЮ (не `TcpStream.read_to_vec`, которая ВСЕГДА аллоцирует
+// `Net.read` НАПРЯМУЮ (не `TcpStream.read_bytes`, которая ВСЕГДА аллоцирует
 // свежий `[]u8`) — в переиспользуемый `scratch` (см. `flush_out`'s банер).
 fn fill_from_tcp(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -> Result[bool, TlsError] {
     scratch.resize(TLS_CHUNK, 0 as u8)
@@ -242,7 +242,7 @@ fn write_step(mut tcp TcpStream, session CTlsHandle, data []u8, mut scratch []u8
 /// Прочитать до `buf.len()` расшифрованных байт; `Ok(0)` = чистый TLS-EOF
 /// (получен close_notify). **`io.Read` conformance**: ошибка — общий
 /// `io.IoError` (проекция `TlsError @to_io_error`); типизированная поверхность
-/// — `@read_to_vec`/`@read_text` (`TlsError`).
+/// — `@read_bytes`/`@read_text` (`TlsError`).
 #stable(since = "0.1")
 export fn TlsStream mut @read(buf mut []u8) Net -> Result[int, IoError] {
     match read_step(@tcp, @session, buf, @scratch) {
@@ -290,7 +290,7 @@ export fn TlsStream mut @write_all(data []u8) Net -> Result[(), TlsError] {
 
 /// Прочитать до `max` байт как owned `[]u8` (пусто = чистый TLS-EOF).
 #stable(since = "0.1")
-export fn TlsStream mut @read_to_vec(max int) Net -> Result[[]u8, TlsError] {
+export fn TlsStream mut @read_bytes(max int) Net -> Result[[]u8, TlsError] {
     mut buf []u8 = []u8.new()
     buf.resize(max, 0 as u8)
     match read_step(@tcp, @session, buf, @scratch) {
@@ -302,7 +302,7 @@ export fn TlsStream mut @read_to_vec(max int) Net -> Result[[]u8, TlsError] {
 /// Прочитать до `max` байт и декодировать как UTF-8.
 #stable(since = "0.1")
 export fn TlsStream mut @read_text(max int) Net -> Result[str, TlsError] {
-    match @read_to_vec(max) {
+    match @read_bytes(max) {
         Ok(bytes) => {
             match bytes.to_str() {
                 Ok(s)  => Ok(s)

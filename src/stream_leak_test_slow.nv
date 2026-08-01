@@ -100,7 +100,7 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
                                 Err(_) => {}
                                 Ok(consume session) => {
                                     consume stream = session
-                                    match stream.read_to_vec(64) {
+                                    match stream.read_bytes(64) {
                                         Ok(_)  => { ro _wrote = stream.write_all("ok\n".bytes()) }
                                         Err(_) => {}
                                     }
@@ -123,7 +123,7 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
                                 Ok(consume session) => {
                                     consume stream = session
                                     ro _wrote = stream.write_all("hi\n".bytes())
-                                    ro _echo = stream.read_to_vec(64)
+                                    ro _echo = stream.read_bytes(64)
                                     stream.close()
                                 }
                             }
