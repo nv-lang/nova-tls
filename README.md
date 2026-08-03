@@ -1,3 +1,5 @@
+**English** | [Русский](README.ru.md)
+
 # nova-tls
 
 TLS client/server for [Nova](https://nv-lang.org) — client + server handshake,
