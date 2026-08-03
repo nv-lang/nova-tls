@@ -16,3 +16,10 @@ target/
 # being committed in the monorepo). A manually dropped-in prebuilt lib
 # (vcpkg/system) is likewise per-machine — don't commit either way.
 native/lib/
+
+# Рабочие журналы окон-агентов — одноразовые, пользователю пакета не нужны
+# (снято 2026-08-04 по замечанию владельца; выводы живут в реестре репы nova).
+PROGRESS*.md
+REPORT*.md
+BRIEF*.md
+*-progress.md
