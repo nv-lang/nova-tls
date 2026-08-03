@@ -30,3 +30,14 @@ if git diff --cached --name-only | grep -q '^spec/decisions/'; then
   fi
 fi
 exit 0
+
+# 4) README пакета — ВСЕГДА пара en+ru (решение владельца 2026-08-03,
+#    doc-conventions #language; страж doc-conventions делает то же самое в nova).
+if [ -f README.md ] && [ ! -f README.ru.md ]; then
+  echo "pre-commit(readme_pair): est README.md, net README.ru.md — para obyazatelna." >&2
+  exit 1
+fi
+if [ -f README.ru.md ] && [ ! -f README.md ]; then
+  echo "pre-commit(readme_pair): est README.ru.md, net README.md — para obyazatelna." >&2
+  exit 1
+fi
