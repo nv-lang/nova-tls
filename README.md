@@ -32,11 +32,11 @@ import tls.{TlsStream, ClientConfig, VerificationMode}
 import std.net.{Net, TcpStream, SocketAddr, real_net}
 
 fn fetch(host str, port u16) Net -> Result[(), TlsError] {
-    ro tcp = TcpStream.connect(SocketAddr.new(host, port))!
+    ro tcp = TcpStream.connect(SocketAddr.new(host, port))!!
     ro cfg = ClientConfig.new(host)
-    consume stream = TlsStream.connect(tcp, cfg)!
-    stream.write_all("GET / HTTP/1.1\r\nHost: ${host}\r\n\r\n".bytes())!
-    ro resp = stream.read_to_vec(4096)!
+    consume stream = TlsStream.connect(tcp, cfg)!!
+    stream.write_all("GET / HTTP/1.1\r\nHost: ${host}\r\n\r\n".bytes())!!
+    ro resp = stream.read_to_vec(4096)!!
     stream.close()
     Ok(())
 }
