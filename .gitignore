@@ -23,3 +23,6 @@ PROGRESS*.md
 REPORT*.md
 BRIEF*.md
 *-progress.md
+
+# локальная обёртка сборки (пути машины разработчика)
+nova.sh
