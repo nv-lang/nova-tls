@@ -17,7 +17,7 @@ fn client_leaf_key() -> []u8 => embed("testdata/client_key.pem")
 
 test "T5-Required: клиент предъявляет валидный серт → mTLS-рукопожатие OK" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -46,7 +46,7 @@ test "T5-Required: клиент предъявляет валидный серт
 
 test "T5-Required-NEG: клиент БЕЗ серта → сервер отвергает рукопожатие" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -89,7 +89,7 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
 
 test "T5-Optional: клиент С сертом принят" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -118,7 +118,7 @@ test "T5-Optional: клиент С сертом принят" {
 
 test "T5-Optional: клиент БЕЗ серта тоже принят (auth опциональна)" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!

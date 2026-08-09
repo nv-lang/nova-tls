@@ -84,7 +84,7 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
         mut sxx f64 = 0.0
         mut n f64 = 0.0
         for i in 0..LEAK_ITERATIONS {
-            ro ch_port = Channel.new(1)
+            ro ch_port = Channel[u16].new(1)
             supervised {
                 spawn {
                     mut lst = match TcpListener.bind(SocketAddr.loopback(0)) {

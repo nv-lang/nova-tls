@@ -33,7 +33,7 @@ fn must_tls(r Result[TlsStream, TlsError]) -> TlsStream {
 
 test "smoke: self-signed пара — handshake + шифрованный echo + ALPN + close" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             // Сервер: bind в своей фибре, порт в канал, один accept + TLS + echo.
             spawn {
@@ -102,7 +102,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
 
 test "NEG-runtime: SNI не совпадает с сертом → HostnameMismatch, сервер тоже падает" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
