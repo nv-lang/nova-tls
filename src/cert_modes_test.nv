@@ -21,7 +21,7 @@ fn fixture_pin() -> []u8 =>
 
 test "T4-Pinned: правильный SPKI-пин — рукопожатие проходит" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -49,7 +49,7 @@ test "T4-Pinned: правильный SPKI-пин — рукопожатие п�
 
 test "T4-Pinned-NEG: неверный пин — клиент отвергает серт, сервер тоже падает" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -87,7 +87,7 @@ test "T4-Pinned-NEG: неверный пин — клиент отвергает
 
 test "T4-Pinned: пиннинг заменяет hostname-проверку — неверный SNI ОК при верном пине" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -118,7 +118,7 @@ test "T4-Pinned: пиннинг заменяет hostname-проверку — �
 
 test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → CertificateInvalid" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -158,7 +158,7 @@ test "T4-SystemRoots-NEG: self-signed серт не в root-роутах → Cer
 
 test "T4-ALPN: пересечение выбирает общий протокол (h2/http1.1 → http/1.1)" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
@@ -190,7 +190,7 @@ test "T4-ALPN: пересечение выбирает общий протоко
 
 test "T4-ALPN-NEG: непересекающиеся списки → handshake fails (AlpnNoCommonProtocol)" {
     with Net = real_net() {
-        ro ch_port = Channel.new(1)
+        ro ch_port = Channel[u16].new(1)
         supervised {
             spawn {
                 consume lst = TcpListener.bind(SocketAddr.loopback(0))!!
