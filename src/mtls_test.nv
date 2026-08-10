@@ -77,7 +77,7 @@ test "T5-Required-NEG: клиент БЕЗ серта → сервер отве�
                 match TlsStream.connect(conn, ccfg) {
                     Ok(consume s)  => {
                         consume st = s
-                        match st.read_bytes(64) { Ok(_) => {} Err(_) => {} }
+                        match st.read_bytes(64) { Ok(_) => {}, Err(_) => {} }
                         st.close()
                     }
                     Err(_) => {}

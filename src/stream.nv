@@ -294,7 +294,7 @@ export fn TlsStream mut @read_bytes(max int) Net -> Result[[]u8, TlsError] {
     mut buf []u8 = []u8.new()
     buf.resize(max, 0 as u8)
     match read_step(@tcp, @session, buf, @scratch) {
-        Ok(n)  => { buf.truncate(n) Ok(buf) }
+        Ok(n)  => { buf.truncate(n); Ok(buf) }
         Err(e) => { Err(e) }
     }
 }
