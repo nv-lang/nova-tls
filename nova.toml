@@ -1,15 +1,15 @@
 # nova.toml — nova-tls: TLS client/server (mbedTLS backend) for Nova.
 #
-# Layout: src/ canon (Plan 195 §"Раскладка пакета"). Source root is set via
+# Layout: src/ canon (Plan 195, "package layout"). Source root is set via
 # the legacy-but-honored `[lib] src` key (compiler-codegen/src/manifest.rs)
 # so module paths resolve relative to `src/` (D78 — module path does NOT
 # include `src`). This package's whole surface is root peers (D78 rev-4,
-# Plan 202 Ф.3, 2026-07-13): `src/stream.nv` -> `module tls`.
+# Plan 202 phase 3, 2026-07-13): `src/stream.nv` -> `module tls`.
 #
 # Native artifacts (`native/tls_c_shim.c` + headers) are declared through the
 # standard user-FFI build pipeline (`[ffi]`, docs/ffi-cookbook.md) — NOT a
 # compiler-internal special case. Zero Rust/cargo: clang/cl.exe compiles the
-# .c shim; mbedTLS is vendored at native/mbedtls/ (Plan 193 Ф.2 gate-3,
+# .c shim; mbedTLS is vendored at native/mbedtls/ (Plan 193 phase 2 gate-3,
 # 2026-07-12 — see native/mbedtls/VENDORED.md) and self-builds via the
 # generic `[ffi] vendor_src_dirs` build-and-cache mechanism, mirroring how
 # other languages' native modules (e.g. Rust `*-sys` crates) vendor C
@@ -31,11 +31,11 @@ src = "src"
 # using TlsStream) needs the prototype visible in ITS OWN TU too, or C falls
 # back to implicit-int declaration (32-bit) → 64-bit handle truncation.
 # Mirrors the monorepo's retired nova_rt.h unconditional `#include
-# "tls_shim.h"` (Plan 193 Ф.2 migration note).
+# "tls_shim.h"` (Plan 193 phase 2 migration note).
 c_shims      = ["native/tls_c_shim.c", "native/tls_shim.h"]
 include_dirs = ["native/", "native/mbedtls/include"]
 libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
-# lib_dirs (Plan 193 Ф.2 gate-3, 2026-07-12): conventional drop-in location
+# lib_dirs (Plan 193 phase 2 gate-3, 2026-07-12): conventional drop-in location
 # for the mbedTLS static libs — either the auto-built vendor cache (default,
 # see vendor_src_dirs below) or a manually dropped-in prebuilt (`vcpkg
 # install mbedtls` into this dir, or copy from a system package; auto-build
@@ -49,7 +49,7 @@ libs         = ["mbedtls", "mbedx509", "mbedcrypto"]
 # to the toolchain's default `-l` search, which hard-fails at link time
 # instead of degrading to SKIP).
 lib_dirs     = ["native/lib"]
-# vendor_src_dirs (Plan 193 Ф.2 gate-3, 2026-07-12): mbedTLS v3.6.2 is
+# vendor_src_dirs (Plan 193 phase 2 gate-3, 2026-07-12): mbedTLS v3.6.2 is
 # vendored at native/mbedtls/ (include/ + library/, see
 # native/mbedtls/VENDORED.md — "vendored like other languages' native
 # modules": Rust *-sys crates, not a system/vcpkg dependency). When the
