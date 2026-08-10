@@ -112,7 +112,7 @@ test "SLOW: [M-187-sustained-live-tls-resource-death] loopback TLS churn — GC-
                     lst.close()
                 }
                 spawn {
-                    ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
+                    ro port = match ch_port.rx.recv() { Some(p) => p, None => 0 as u16 }
                     match TcpStream.connect(SocketAddr.loopback(port)) {
                         Err(_) => {}
                         Ok(consume tcp) => {

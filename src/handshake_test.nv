@@ -62,7 +62,7 @@ test "smoke: self-signed пара — handshake + шифрованный echo + 
             }
             // Клиент: CustomRoots на самоподписанный серт + SNI localhost.
             spawn {
-                ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
+                ro port = match ch_port.rx.recv() { Some(p) => p, None => 0 as u16 }
                 assert(port > 0)
                 consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 ro ccfg = ClientConfig.new("localhost")
@@ -123,7 +123,7 @@ test "NEG-runtime: SNI не совпадает с сертом → HostnameMisma
                 }
             }
             spawn {
-                ro port = match ch_port.rx.recv() { Some(p) => p  None => 0 as u16 }
+                ro port = match ch_port.rx.recv() { Some(p) => p, None => 0 as u16 }
                 assert(port > 0)
                 consume conn = TcpStream.connect(SocketAddr.loopback(port))!!
                 // Серт покрывает ТОЛЬКО localhost/127.0.0.1 — wrong.example не пройдёт.
