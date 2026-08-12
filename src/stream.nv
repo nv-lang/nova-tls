@@ -203,7 +203,7 @@ fn pump_handshake(mut tcp TcpStream, session CTlsHandle, mut scratch []u8) Net -
 // Ядро чтения: расшифрованный plaintext в buf[0..n]. Ok(0) = чистый TLS-EOF
 // (close_notify). Обрыв TCP БЕЗ close_notify → PeerMisbehaved (truncation-
 // защита, D-блок A).
-fn read_step(mut tcp TcpStream, session CTlsHandle, buf mut []u8, mut scratch []u8) Net -> Result[int, TlsError] {
+fn read_step(mut tcp TcpStream, session CTlsHandle, mut buf []u8, mut scratch []u8) Net -> Result[int, TlsError] {
     if buf.len() == 0 { return Ok(0) }
     mut waiting = true
     while waiting {
@@ -244,7 +244,7 @@ fn write_step(mut tcp TcpStream, session CTlsHandle, data []u8, mut scratch []u8
 /// `io.IoError` (проекция `TlsError @to_io_error`); типизированная поверхность
 /// — `@read_bytes`/`@read_text` (`TlsError`).
 #stable(since = "0.1")
-export fn TlsStream mut @read(buf mut []u8) Net -> Result[int, IoError] {
+export fn TlsStream mut @read(mut buf []u8) Net -> Result[int, IoError] {
     match read_step(@tcp, @session, buf, @scratch) {
         Ok(n)  => Ok(n)
         Err(e) => Err(e.to_io_error("read"))
