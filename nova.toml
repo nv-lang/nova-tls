@@ -17,7 +17,7 @@
 
 [package]
 name = "tls"
-version = "0.1.7"
+version = "0.1.8"
 description = "TLS client/server (cert-modes, mTLS, SPKI pinning) over mbedTLS — extracted from Nova's std/tls (Plan 193)"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/nv-lang/nova-tls"
