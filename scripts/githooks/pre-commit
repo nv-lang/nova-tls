@@ -41,3 +41,12 @@ if [ -f README.ru.md ] && [ ! -f README.md ]; then
   echo "pre-commit(readme_pair): est README.ru.md, net README.md — para obyazatelna." >&2
   exit 1
 fi
+
+# Норма об инвариантах (docs/dev/conventions-governance.md в репе nova) —
+# ВСЕОБЪЕМЛЮЩАЯ по требованию владельца 2026-08-08: действует и в пакетных
+# репах. Страж роздан scripts/tools/sync-guards-to-packages.sh, расхождение
+# копий ловит гейт nova.
+ROOT="$(git rev-parse --show-toplevel)"
+if [ -f "$ROOT/scripts/guards/check-invariant-discipline.sh" ]; then
+    bash "$ROOT/scripts/guards/check-invariant-discipline.sh" "$ROOT" HEAD || exit 1
+fi
